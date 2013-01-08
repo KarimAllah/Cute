@@ -12,6 +12,7 @@
 #include <smpboot.h>
 #include <paging.h>
 #include <string.h>
+#include <syscall.h>
 #include <apic.h>
 #include <idt.h>
 #include <pit.h>
@@ -33,7 +34,7 @@ extern const char trampoline_end[];
 struct smpboot_params {
 	uintptr_t cr3;
 	struct idt_descriptor idtr;
-	struct gdt_descriptor gdtr;
+	struct gdt_register gdtr;
 
 	/* Unique values for each core */
 	char *stack_ptr;
@@ -65,11 +66,11 @@ static inline void smpboot_params_validate_offsets(void)
 
 	compiler_assert(SMPBOOT_GDTR_LIMIT ==
 	       offsetof(struct smpboot_params, gdtr) +
-	       offsetof(struct gdt_descriptor, limit));
+	       offsetof(struct gdt_register, limit));
 
 	compiler_assert(SMPBOOT_GDTR_BASE ==
 	       offsetof(struct smpboot_params, gdtr) +
-	       offsetof(struct gdt_descriptor, base));
+	       offsetof(struct gdt_register, base));
 
 	compiler_assert(SMPBOOT_STACK_PTR ==
 	       offsetof(struct smpboot_params, stack_ptr));
@@ -224,11 +225,15 @@ void __no_return secondary_start(void)
 	++nr_alive_cpus;
 
 	schedulify_this_code_path(SECONDARY);
+	//vm_init();
 	apic_local_regs_init();
 
 	/* Assert validity of our per-CPU area */
 	id.raw = apic_read(APIC_ID);
 	assert(id.id == percpu_get(apic_id));
+
+	init_tss();
+	init_syscall();
 
 	printk("SMP: CPU apic_id=%d started\n", id.id);
 

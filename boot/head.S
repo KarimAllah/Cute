@@ -81,12 +81,15 @@ startup_32:
 	movl   $init_pml4, %eax
 	movl   %eax, %cr3
 
-	/* Enable long mode */
 	.equ   MSR_EFER, 0x0c0000080
 	.equ   EFER_LME, 8
+	.equ   EFER_SCE, 0
 	movl   $MSR_EFER, %ecx
 	rdmsr
+
+	/* Enable long mode and fast syscalls */
 	btsl   $EFER_LME, %eax
+	btsl   $EFER_SCE, %eax
 	wrmsr
 
 	/* Activate long mode: enable paging */
@@ -384,10 +387,35 @@ global_gdt_end:
 gdt:
 	.quad  0x0000000000000000
 
-	/* long mode Code segment */
+	/* long mode Kernel Code segment */
 	.long  0x00000000		# base/limit; ignored in LM
 	.byte  0x00, 0x98		# P=1, DPL=0, C/conforming=0
-	.byte  0xa0, 0x00		# L=1, D=0, base[24-31] ignored
+	.byte  0x20, 0x00		# L=1, D=0, base[24-31] ignored
+
+	/* long mode Kernel Stack Segment, always follows the Kernel Code segment - For syscalls */
+	.long  0x00000000
+	.byte  0x00, 0x92		# P=1, W=1, C=0, DPL=0
+	.byte  0x00, 0x00
+
+	/* compatibility mode User code segment - For syscalls. We only support support 64-bit mode for now */
+	.quad 0x0000000000000000
+
+	/* long mode User Stack Segment */
+	.long  0x00000000
+	.byte  0x00, 0xF2		# P=1, W=1, C=0, DPL=3
+	.byte  0x00, 0x00
+
+	/* long mode User Code segment */
+	.long  0x00000000		# base/limit; ignored in LM
+	.byte  0x00, 0xF8		# P=1, DPL=3, C/conforming=0
+	.byte  0x20, 0x00		# L=1, D=0, base[24-31] ignored
+
+	/* task state segment */
+	.long  0x00000000		# base/limit=0; should be set before ltr
+	.byte  0x00, 0x89		# P=1, DPL=0, Type = 0x9 (TSS)
+	.byte  0x00, 0x00		# AVL=0, G=0, base/limit=0
+	.long  0x00000000		# base=0
+	.long  0x00000000		# ignore
 
 gdt_end:
 

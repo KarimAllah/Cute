@@ -18,15 +18,44 @@
 
 #include <kernel.h>
 #include <paging.h>
+#include <percpu.h>
 #include <mm.h>
 #include <e820.h>
 #include <vm.h>
 #include <tests.h>
 
+
+
 /*
- * Kernel's address-space master page table.
+ * Fill given PML2 table with entries mapping the virtual
+ * range (@vstart - @vend) to physical @pstart upwards.
+ *
+ * Note-1! pass a valid table; unused entries must be zero
+ * Note-2! range edges, and @pstart must be 2-MBytes aligned
  */
-static struct pml4e *kernel_pml4_table;
+static void map_pml1_range(struct pml1e *pml1_base, uintptr_t vstart,
+			   uintptr_t vend, uintptr_t pstart, bool kernel)
+{
+	struct pml1e *pml1e;
+	if ((vend - vstart) > (0x1ULL << PAGE_SHIFT_2MB))
+		panic("A PML2 table cant map ranges > 2-MByte. "
+		      "Given range: 0x%lx - 0x%lx", vstart, vend);
+
+	for (pml1e = pml1_base + pml1_index(vstart);
+		pml1e <= pml1_base + pml1_index(vend - 1);
+		pml1e++) {
+		pml1e->present = 1;
+		pml1e->read_write = 1;
+		if(kernel)
+			pml1e->user_supervisor = 0;
+		else
+			pml1e->user_supervisor = 1;
+		pml1e->page_base = (uintptr_t)pstart >> PAGE_SHIFT;
+
+		pstart += PML1_ENTRY_MAPPING_SIZE;
+		vstart += PML1_ENTRY_MAPPING_SIZE;
+	}
+}
 
 /*
  * Fill given PML2 table with entries mapping the virtual
@@ -36,14 +65,14 @@ static struct pml4e *kernel_pml4_table;
  * Note-2! range edges, and @pstart must be 2-MBytes aligned
  */
 static void map_pml2_range(struct pml2e *pml2_base, uintptr_t vstart,
-			   uintptr_t vend, uintptr_t pstart)
+			   uintptr_t vend, uintptr_t pstart, bool kernel)
 {
+	struct pml1e *pml1_base;
 	struct pml2e *pml2e;
+	struct page *page;
+	uintptr_t end;
 
 	assert(page_aligned(pml2_base));
-	assert(is_aligned(vstart, PAGE_SIZE_2MB));
-	assert(is_aligned(vend, PAGE_SIZE_2MB));
-	assert(is_aligned(pstart, PAGE_SIZE_2MB));
 
 	if ((vend - vstart) > (0x1ULL << 30))
 		panic("A PML2 table cant map ranges > 1-GByte. "
@@ -52,16 +81,26 @@ static void map_pml2_range(struct pml2e *pml2_base, uintptr_t vstart,
 	for (pml2e = pml2_base + pml2_index(vstart);
 	     pml2e <= pml2_base + pml2_index(vend - 1);
 	     pml2e++) {
-		assert((char *)pml2e < (char *)pml2_base + PAGE_SIZE);
-		if (pml2e->present)
-			panic("Mapping virtual 0x%lx to already mapped physical "
-			      "page at 0x%lx", vstart, pml2e->page_base);
 
-		pml2e->present = 1;
-		pml2e->read_write = 1;
-		pml2e->user_supervisor = 0;
-		pml2e->__reserved1 = 1;
-		pml2e->page_base = (uintptr_t)pstart >> PAGE_SHIFT_2MB;
+		if (!pml2e->present) {
+			pml2e->present = 1;
+			pml2e->read_write = 1;
+			if(kernel)
+				pml2e->user_supervisor = 0;
+			else
+				pml2e->user_supervisor = 1;
+			page = get_zeroed_page(ZONE_1GB);
+			pml2e->pt_base = page_phys_addr(page) >> PAGE_SHIFT;
+		}
+
+		pml1_base = VIRTUAL((uintptr_t)pml2e->pt_base << PAGE_SHIFT);
+
+		if (pml2e == pml2_base + pml1_index(vend - 1)) /* Last entry */
+			end = vend;
+		else
+			end = vstart + PML2_ENTRY_MAPPING_SIZE;
+
+		map_pml1_range(pml1_base, vstart, end, pstart, kernel);
 
 		pstart += PML2_ENTRY_MAPPING_SIZE;
 		vstart += PML2_ENTRY_MAPPING_SIZE;
@@ -76,7 +115,7 @@ static void map_pml2_range(struct pml2e *pml2_base, uintptr_t vstart,
  * Note-2! range edges, and @pstart must be 2-MBytes aligned
  */
 static void map_pml3_range(struct pml3e *pml3_base, uintptr_t vstart,
-			   uintptr_t vend, uintptr_t pstart)
+			   uintptr_t vend, uintptr_t pstart, bool kernel)
 {
 	struct pml3e *pml3e;
 	struct pml2e *pml2_base;
@@ -84,9 +123,6 @@ static void map_pml3_range(struct pml3e *pml3_base, uintptr_t vstart,
 	uintptr_t end;
 
 	assert(page_aligned(pml3_base));
-	assert(is_aligned(vstart, PAGE_SIZE_2MB));
-	assert(is_aligned(vend, PAGE_SIZE_2MB));
-	assert(is_aligned(pstart, PAGE_SIZE_2MB));
 
 	if ((vend - vstart) > PML3_MAPPING_SIZE)
 		panic("A PML3 table can't map ranges > 512-GBytes. "
@@ -99,7 +135,10 @@ static void map_pml3_range(struct pml3e *pml3_base, uintptr_t vstart,
 		if (!pml3e->present) {
 			pml3e->present = 1;
 			pml3e->read_write = 1;
-			pml3e->user_supervisor = 1;
+			if(kernel)
+				pml3e->user_supervisor = 0;
+			else
+				pml3e->user_supervisor = 1;
 			page = get_zeroed_page(ZONE_1GB);
 			pml3e->pml2_base = page_phys_addr(page) >> PAGE_SHIFT;
 		}
@@ -111,7 +150,7 @@ static void map_pml3_range(struct pml3e *pml3_base, uintptr_t vstart,
 		else
 			end = vstart + PML3_ENTRY_MAPPING_SIZE;
 
-		map_pml2_range(pml2_base, vstart, end, pstart);
+		map_pml2_range(pml2_base, vstart, end, pstart, kernel);
 
 		pstart += PML3_ENTRY_MAPPING_SIZE;
 		vstart += PML3_ENTRY_MAPPING_SIZE;
@@ -126,7 +165,7 @@ static void map_pml3_range(struct pml3e *pml3_base, uintptr_t vstart,
  * Note-2! range edges, and @pstart must be 2-MBytes aligned
  */
 static void map_pml4_range(struct pml4e *pml4_base, uintptr_t vstart,
-			   uintptr_t vend, uintptr_t pstart)
+			   uintptr_t vend, uintptr_t pstart, bool kernel)
 {
 	struct pml4e *pml4e;
 	struct pml3e *pml3_base;
@@ -134,9 +173,6 @@ static void map_pml4_range(struct pml4e *pml4_base, uintptr_t vstart,
 	uintptr_t end;
 
 	assert(page_aligned(pml4_base));
-	assert(is_aligned(vstart, PAGE_SIZE_2MB));
-	assert(is_aligned(vend, PAGE_SIZE_2MB));
-	assert(is_aligned(pstart, PAGE_SIZE_2MB));
 
 	if ((vend - vstart) > PML4_MAPPING_SIZE)
 		panic("Mapping a virtual range that exceeds the 48-bit "
@@ -147,9 +183,13 @@ static void map_pml4_range(struct pml4e *pml4_base, uintptr_t vstart,
 	     pml4e++) {
 		assert((char *)pml4e < (char *)pml4_base + PAGE_SIZE);
 		if (!pml4e->present) {
+			if (kernel) {
+				pml4e->user_supervisor = 0;
+			} else {
+				pml4e->user_supervisor = 1;
+			}
 			pml4e->present = 1;
 			pml4e->read_write = 1;
-			pml4e->user_supervisor = 1;
 			page = get_zeroed_page(ZONE_1GB);
 			pml4e->pml3_base = page_phys_addr(page) >> PAGE_SHIFT;
 		}
@@ -161,11 +201,17 @@ static void map_pml4_range(struct pml4e *pml4_base, uintptr_t vstart,
 		else
 			end = vstart + PML4_ENTRY_MAPPING_SIZE;
 
-		map_pml3_range(pml3_base, vstart, end, pstart);
+		map_pml3_range(pml3_base, vstart, end, pstart, kernel);
 
 		pstart += PML4_ENTRY_MAPPING_SIZE;
 		vstart += PML4_ENTRY_MAPPING_SIZE;
 	}
+}
+
+
+static void map_range_common(struct pml4e *pml4, uintptr_t vstart, uint64_t vlen, uintptr_t pstart, bool kernel)
+{
+	map_pml4_range(pml4, vstart, vstart + vlen, pstart, kernel);
 }
 
 /*
@@ -177,13 +223,16 @@ static void map_pml4_range(struct pml4e *pml4_base, uintptr_t vstart,
  * Note-1! Given range, and its subranges, must be unmapped
  * Note-2! region edges, and @pstart must be 2-MBytes aligned
  */
-static void map_kernel_range(uintptr_t vstart, uint64_t vlen, uintptr_t pstart)
+void map_range_kernel(uintptr_t vstart, uint64_t vlen, uintptr_t pstart)
 {
-	assert(is_aligned(vstart, PAGE_SIZE_2MB));
-	assert(is_aligned(vlen, PAGE_SIZE_2MB));
-	assert(is_aligned(pstart, PAGE_SIZE_2MB));
+	struct pml4e *pml4 = (struct pml4e *)VIRTUAL(current->cr3);
+	map_range_common(pml4, vstart, vlen, pstart, true);
+}
 
-	map_pml4_range(kernel_pml4_table, vstart, vstart + vlen, pstart);
+void map_range_user(struct proc *proc, uintptr_t vstart, uint64_t vlen, uintptr_t pstart)
+{
+	struct pml4e *pml4 = (struct pml4e *)VIRTUAL(proc->cr3);
+	map_range_common(pml4, vstart, vlen, pstart, false);
 }
 
 /*
@@ -196,12 +245,9 @@ static bool vaddr_is_mapped(void *vaddr)
 	struct pml4e *pml4e;
 	struct pml3e *pml3e;
 	struct pml2e *pml2e;
+	struct pml1e *pml1e;
 
-	assert(kernel_pml4_table != NULL);
-	assert((uintptr_t)vaddr >= KERN_PAGE_OFFSET);
-	assert((uintptr_t)vaddr < KERN_PAGE_END_MAX);
-
-	pml4e = kernel_pml4_table + pml4_index(vaddr);
+	pml4e = ((struct pml4e *)VIRTUAL(current->cr3)) + pml4_index(vaddr);
 	if (!pml4e->present)
 		return false;
 
@@ -215,8 +261,13 @@ static bool vaddr_is_mapped(void *vaddr)
 	if (!pml2e->present)
 		return false;
 
-	assert((uintptr_t)page_base(pml2e) ==
-	       round_down((uintptr_t)vaddr, PAGE_SIZE_2MB));
+	pml1e = pml1_base(pml2e);
+	pml1e += pml1_index(vaddr);
+	if (!pml1e->present)
+		return false;
+
+	assert((uintptr_t)page_base(pml1e) ==
+	       round_down((uintptr_t)vaddr, PAGE_SIZE));
 	return true;
 }
 
@@ -245,7 +296,7 @@ void *vm_kmap(uintptr_t pstart, uint64_t len)
 	while (pstart < pend) {
 		vstart = VIRTUAL(pstart);
 		if (!vaddr_is_mapped(vstart))
-			map_kernel_range((uintptr_t)vstart,
+			map_range_kernel((uintptr_t)vstart,
 					 PAGE_SIZE_2MB, pstart);
 
 		pstart += PAGE_SIZE_2MB;
@@ -260,24 +311,20 @@ void *vm_kmap(uintptr_t pstart, uint64_t len)
  */
 void vm_init(void)
 {
-	struct page *pml4_page;
 	uint64_t phys_end;
 
-	pml4_page = get_zeroed_page(ZONE_1GB);
-	kernel_pml4_table = page_address(pml4_page);
-
 	/* Map 512-MByte kernel text area */
-	map_kernel_range(KTEXT_PAGE_OFFSET, KTEXT_AREA_SIZE, KTEXT_PHYS_OFFSET);
+	map_range_kernel(KTEXT_PAGE_OFFSET, KTEXT_AREA_SIZE, KTEXT_PHYS_OFFSET);
 
 	/* Map the entire available physical space */
 	phys_end = e820_get_phys_addr_end();
 	phys_end = round_up(phys_end, PAGE_SIZE_2MB);
-	map_kernel_range(KERN_PAGE_OFFSET, phys_end, KERN_PHYS_OFFSET);
+	map_range_kernel(KERN_PAGE_OFFSET, phys_end, KERN_PHYS_OFFSET);
 	printk("Memory: Mappnig range 0x%lx -> 0x%lx to physical 0x0\n",
 	       KERN_PAGE_OFFSET, KERN_PAGE_OFFSET + phys_end);
 
 	/* Heaven be with us .. */
-	load_cr3(page_phys_addr(pml4_page));
+	load_cr3(current->cr3);
 }
 
 /*

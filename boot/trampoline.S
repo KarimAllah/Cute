@@ -76,6 +76,7 @@ startup_32:
 
 	.equ   MSR_EFER, 0x0c0000080
 	.equ   EFER_LME_BIT, 8
+	.equ   EFER_SCE, 0
 
 	/* Enable PAE */
 	movl   %cr4, %eax
@@ -101,11 +102,13 @@ startup_32:
 	movl   $identity_pml4, %eax
 	movl   %eax, %cr3
 
-	/* Enable long mode */
+	/* Enable long mode and fast syscalls */
 	movl   $MSR_EFER, %ecx
 	rdmsr
 	btsl   $EFER_LME_BIT, %eax
+	btsl   $EFER_SCE, %eax
 	wrmsr
+
 
 	/* Activate long mode: enable paging */
 	movl   %cr0, %eax

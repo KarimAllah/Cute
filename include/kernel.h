@@ -169,6 +169,15 @@ extern void halt_cpu_ipi_handler(void);
 #define cpu_pause()						\
 	asm volatile ("pause":::"memory");
 
+
+/* busy wait */
+#define busy_wait(end) \
+{ \
+	uint64_t tmp = 1; \
+	while(tmp++ < end) \
+		asm(""); \
+}
+
 /*
  * Compile-time assert for constant-folded expressions
  *

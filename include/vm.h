@@ -12,8 +12,20 @@
  */
 
 #include <tests.h>
+#include <proc.h>
+
+typedef uint64_t vm_cpu_addr_t;
+typedef uint64_t vm_bus_addr_t;
+typedef uint64_t vm_virt_addr_t;
+
+typedef struct {
+	uint64_t start;
+	uint64_t size;
+} vm_memory_range_t;
 
 void vm_init(void);
+void map_range_kernel(uintptr_t vstart, uint64_t vlen, uintptr_t pstart);
+void map_range_user(struct proc *proc, uintptr_t vstart, uint64_t vlen, uintptr_t pstart);
 void *vm_kmap(uintptr_t pstart, uint64_t len);
 
 #if	VM_TESTS

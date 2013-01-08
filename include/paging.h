@@ -30,7 +30,7 @@
  * This is the virtual base for %rip, %rsp, and kernel global
  * symbols. Check the logic behind this at head.S comments.
  *
- * @KTEXT_OFFSET is equivalent to Linux's __START_KERNEL_MAP
+ * @KTEXT_PAGE_OFFSET is equivalent to Linux's __START_KERNEL_MAP
  */
 #define KTEXT_PAGE_OFFSET	0xffffffff80000000ULL
 #define KTEXT_PHYS_OFFSET	0x0
@@ -42,14 +42,14 @@
 	assert((uintptr_t)(phys_address) >= KTEXT_PHYS_OFFSET);	\
 	assert((uintptr_t)(phys_address) < KTEXT_PHYS_END);	\
 								\
-	(void *)((char *)(phys_address) + KTEXT_PAGE_OFFSET);	\
+	(void *)((char *)(phys_address) - KTEXT_PHYS_OFFSET + KTEXT_PAGE_OFFSET);	\
 })
 #define KTEXT_PHYS(virt_address)				\
 ({								\
 	assert((uintptr_t)(virt_address) >= KTEXT_PAGE_OFFSET);	\
 	assert((uintptr_t)(virt_address) < KTEXT_PAGE_END);	\
 								\
-	(uintptr_t)((char *)(virt_address) - KTEXT_PAGE_OFFSET);\
+	(uintptr_t)((char *)(virt_address) - KTEXT_PAGE_OFFSET + KTEXT_PHYS_OFFSET);\
 })
 
 /*
@@ -62,9 +62,9 @@
  * @KERN_PAGE_END_MAX, @KERN_PHYS_END_MAX: those are only
  * rached if the system has max supported phys memory, 64TB!
  */
-#define KERN_PAGE_OFFSET	0xffff800000000000ULL
+#define KERN_PAGE_OFFSET	0xffffff8000000000ULL
 #define KERN_PHYS_OFFSET	0x0ULL
-#define KERN_PAGE_END_MAX	0xffffc00000000000ULL
+#define KERN_PAGE_END_MAX	0xffffffc000000000ULL
 #define KERN_AREA_MAX_SIZE	(KERN_PAGE_END_MAX - KERN_PAGE_OFFSET)
 #define KERN_PHYS_END_MAX	(KERN_PHYS_OFFSET + KERN_AREA_MAX_SIZE)
 #define VIRTUAL(phys_address)					\
@@ -135,6 +135,24 @@
  */
 #define pml2_index(virt_addr)					\
 	(((uintptr_t)(virt_addr) >> PML2_ENTRY_SHIFT) & 0x1ffULL)
+
+/*
+ * Page Map Level 1 - the Page Table
+ *
+ * A PML1 Table can map a 2-MByte virtual space by
+ * virtue of its entries, which can map 2-KB each.
+ */
+
+#define PML1_ENTRY_SHIFT	(12)
+#define PML1_ENTRY_MAPPING_SIZE	(0x1ULL << PML1_ENTRY_SHIFT)       /* 4K-MByte */
+#define PML1_MAPPING_SIZE	(0x1ULL << (PML1_ENTRY_SHIFT + 9)  /* 2-MByte */
+#define PML1_ENTRIES		512                                /* 4K / 8 */
+/*
+ * Extract the 9-bit PML2 index/offset from given
+ * virtual address
+ */
+#define pml1_index(virt_addr)					\
+	(((uintptr_t)(virt_addr) >> PML1_ENTRY_SHIFT) & 0x1ffULL)
 
 /*
  * 4-KByte pages
@@ -217,44 +235,59 @@ static inline void *pml2_base(struct pml3e *pml3e)
 }
 
 /*
- * Page Directory entry, 2-MB pages
+ * Page Directory entry, 4-KB pages
  * NOTE!! set the page size bit to 1
  */
 struct pml2e {
-	unsigned present:1,		/* Present referenced 2-MB page */
+	uint64_t present:1,		/* Present referenced 2-MB page */
 		read_write:1,		/* 0: write-disable this 2-MB page */
 		user_supervisor:1,	/* 0: no access for CPL=3 code */
 		pwt:1,			/* Page-level write-through */
 		pcd:1,			/* Page-level cache disable */
 		accessed:1,		/* Accessed bit (see pml4e comment) */
-
-		/* The dirty flag is only available in the lowest-level table.
-		 * If set, it indicates the physical page this entry points
-		 * has been written. This bit is never cleared by the CPU */
-		dirty:1,
-
-		/* Page Size bit; must be set to one. When this bit is set,
-		 * in a third (1-GB page) or second level (2-MB page) page
-		 * table, the entry is the lowest level of the page translation
-		 * hierarchy */
-		__reserved1:1,
-
-		/* Global page bit; only available in the lowest-level page
-		 * translation hieararchy. If set, referenced page TLB entry
-		 * is not invalidated when CR3 is loaded */
-		global:1,
-
-		avail0:3,		/* Use those as we wish */
-		pat:1,			/* Page-Attribute Table bit */
-		__reserved0:8,		/* Must be zero */
-		page_base:31,		/* Page base >> 21 */
-		avail1:11,		/* Available for use */
+		__ignored0:1,
+		__reserved:1, /* Must be zero */
+		__ignored1:1,
+		avail0:3,
+		pt_base:40,
+		avail1:11,
 		nx:1;			/* No-Execute for this 2-MB page */
 } __packed;
 
-static inline void *page_base(struct pml2e *pml2e)
+static inline void *pml1_base(struct pml2e *pml2e)
 {
-	return VIRTUAL((uintptr_t)pml2e->page_base << PAGE_SHIFT_2MB);
+	return VIRTUAL((uintptr_t)pml2e->pt_base << PAGE_SHIFT);
+}
+
+struct pml1e {
+	uint64_t present:1,		/* Present referenced 2-MB page */
+			read_write:1,		/* 0: write-disable this 2-MB page */
+			user_supervisor:1,	/* 0: no access for CPL=3 code */
+			pwt:1,			/* Page-level write-through */
+			pcd:1,			/* Page-level cache disable */
+			accessed:1,		/* Accessed bit (see pml4e comment) */
+
+			/* The dirty flag is only available in the lowest-level table.
+			 * If set, it indicates the physical page this entry points
+			 * has been written. This bit is never cleared by the CPU */
+			dirty:1,
+
+			pat:1,
+
+			/* Global page bit; only available in the lowest-level page
+			 * translation hieararchy. If set, referenced page TLB entry
+			 * is not invalidated when CR3 is loaded */
+			global:1,
+
+			avail0:3,		/* Use those as we wish */
+			page_base:40,		/* Page base >> 21 */
+			avail1:11,		/* Available for use */
+			nx:1;			/* No-Execute for this 2-MB page */
+};
+
+static inline void *page_base(struct pml1e *pml1e)
+{
+	return VIRTUAL((uintptr_t)pml1e->page_base << PAGE_SHIFT);
 }
 
 /*
@@ -291,7 +324,7 @@ static inline uint64_t get_cr3(void)
 #define KTEXT_VIRTUAL(address)	((address) + KTEXT_PAGE_OFFSET)
 #define KTEXT_PHYS(address)	((address) - KTEXT_PAGE_OFFSET)
 
-#define KERN_PAGE_OFFSET	0xffff800000000000
+#define KERN_PAGE_OFFSET	0xffffff8000000000
 #define VIRTUAL(address)	((address) + KERN_PAGE_OFFSET)
 
 #endif /* !__ASSEMBLY__ */

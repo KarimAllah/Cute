@@ -34,7 +34,9 @@
 #include <percpu.h>
 #include <list.h>
 #include <serial.h>
+#include <segment.h>
 #include <idt.h>
+#include <mm.h>
 #include <apic.h>
 #include <ioapic.h>
 #include <pit.h>
@@ -149,6 +151,7 @@ static void __rq_add_proc(struct runqueue *rq, struct proc *proc, int prio,
 
 	switch(type) {
 	case ENQ_NORMAL:
+		barrier();
 		proc->runtime = 0;
 		list_add_tail(&rq->head[prio], &proc->pnode);
 		break;
@@ -158,6 +161,7 @@ static void __rq_add_proc(struct runqueue *rq, struct proc *proc, int prio,
 	default:
 		assert(false);
 	}
+	barrier();
 }
 
 static void rq_add_proc(struct runqueue *rq, struct proc *proc, int prio)
@@ -264,6 +268,7 @@ static struct proc *preempt(struct proc *new_proc, int new_prio)
 		new_proc->enter_runqueue_ts;
 
 	sched_dbg("dispatching T%d\n", new_proc->pid);
+	percpu_addr(tss)->rsp0 = new_proc->kstack;
 	return new_proc;
 }
 
@@ -361,8 +366,20 @@ void schedulify_this_code_path(enum cpu_type t)
 	barrier();
 
 	proc_init(current);
+
 	current->state = TD_ONCPU;
+	/* Initialize the PML4 page */
+	current->cr3 = page_phys_addr(get_zeroed_page(ZONE_1GB));
 	PS->current_prio = DEFAULT_PRIO;
+}
+
+void init_tss(void)
+{
+	/* Initialize TSS */
+	struct gdt_register gdt = get_gdt();
+	struct system_descriptor *tss_desc = (struct system_descriptor *)gdt_desc_at(gdt.base, KERNEL_TSS);
+	set_tss_descriptor(tss_desc, 0x0, (uint64_t)percpu_addr(tss), 0x67);
+	set_tr(KERNEL_TSS);
 }
 
 void sched_init(void)

@@ -1,13 +1,16 @@
 /*
  * Copyright (C) 2009-2011 Ahmed S. Darwish <darwish.07@gmail.com>
+
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
  *  the Free Software Foundation, version 2.
  */
 
+#include <io.h>
 #include <kernel.h>
 #include <list.h>
+#include <sys.h>
 #include <unrolled_list.h>
 #include <hash.h>
 #include <bitmap.h>
@@ -27,6 +30,7 @@
 #include <ramdisk.h>
 #include <e820.h>
 #include <mm.h>
+#include <syscall.h>
 #include <vm.h>
 #include <paging.h>
 #include <kmalloc.h>
@@ -35,6 +39,7 @@
 #include <sched.h>
 #include <ext2.h>
 #include <file.h>
+#include <vga.h>
 
 static void setup_idt(void)
 {
@@ -104,18 +109,8 @@ void __no_return kernel_start(void)
 	clear_bss();
 
 	/*
-	 * Very-early setup: Do not call any code that will use
-	 * printk(), `current', per-CPU vars, or a spin lock.
-	 */
-
-	setup_idt();
-
-	schedulify_this_code_path(BOOTSTRAP);
-
-	/*
 	 * Memory Management init
 	 */
-
 	print_info();
 
 	/* First, don't override the ramdisk area (if any) */
@@ -127,6 +122,14 @@ void __no_return kernel_start(void)
 	/* and tokenize the available memory into allocatable pages */
 	pagealloc_init();
 
+	/*
+	 * Very-early setup: Do not call any code that will use
+	 * `current', per-CPU vars, or a spin lock.
+	 */
+	setup_idt();
+
+	schedulify_this_code_path(BOOTSTRAP);
+
 	/* With the page allocator in place, git rid of our temporary
 	 * early-boot page tables and setup dynamic permanent ones */
 	vm_init();
@@ -134,6 +137,9 @@ void __no_return kernel_start(void)
 	/* MM basics done, enable dynamic heap memory to kernel code
 	 * early on .. */
 	kmalloc_init();
+
+	/* Never call it before initializing kmalloc */
+	init_tss();
 
 	/*
 	 * Secondary-CPUs startup
@@ -157,6 +163,12 @@ void __no_return kernel_start(void)
 
 	keyboard_init();
 
+	/* VGA init */
+#if 1
+	vga_init(VIDMEM_MODE13);
+	render_plane(&vga_logo);
+#endif
+
 	/* Startup finished, roll-in the scheduler! */
 	sched_init();
 	local_irq_enable();
@@ -166,6 +178,37 @@ void __no_return kernel_start(void)
 	 */
 
 	ext2_init();
+
+	/* Initializing user space */
+	init_syscall();
+
+#define VALUE_AT(addr) (*(unsigned long *)(addr))
+
+	int fd;
+	struct proc *user_proc;
+	struct page *process_page;
+	struct page *stack_page;
+
+	for (int i = 0; i < 1; i++)
+	{
+		user_proc = uthread_create((thread_entry)(USER_START_ADDR), USER_STACK_ADDR + PAGE_SIZE - 0x8, PAGE_SIZE/*stack_size=4Kb*/);
+		printk("Our new thread : %x\n", user_proc);
+
+		// Map process
+		process_page = get_free_page(ZONE_ANY);
+		map_range_user(user_proc, USER_START_ADDR, PAGE_SIZE, page_phys_addr(process_page));
+
+		// Map stack
+		stack_page = get_free_page(ZONE_ANY);
+		map_range_user(user_proc, USER_STACK_ADDR, PAGE_SIZE, page_phys_addr(stack_page));
+
+		fd = sys_open("/init", O_RDONLY, 0);
+		sys_read(fd, page_address(process_page), 1024);
+		sys_close(fd);
+		thread_start(user_proc);
+	}
+
+	/* Launch this process */
 	run_test_cases();
 	halt();
 }

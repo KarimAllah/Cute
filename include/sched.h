@@ -14,6 +14,8 @@
 #include <tests.h>
 #include <stdint.h>
 
+#include <list.h>
+
 /*
  * System clock ticks per second
  */
@@ -45,6 +47,8 @@
 struct runqueue {
 	struct list_node head[MAX_PRIO + 1];
 };
+
+typedef void (* __no_return thread_entry)(void);
 
 static inline void rq_init(struct runqueue *rq)
 {
@@ -96,13 +100,16 @@ enum cpu_type {
 };
 
 void sched_percpu_area_init(void);
+void init_tss(void);
 void schedulify_this_code_path(enum cpu_type);
 void sched_init(void);
 
 void sched_enqueue(struct proc *);
 struct proc *sched_tick(void);	/* Avoid GCC warning */
 
-void kthread_create(void (* __no_return func)(void));
+struct proc *kthread_create(thread_entry func);
+struct proc *uthread_create(thread_entry func, uint64_t stack, uint32_t stack_size);
+void thread_start(struct proc *proc);
 uint64_t kthread_alloc_pid(void);
 
 #if	SCHED_TESTS

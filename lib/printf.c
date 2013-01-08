@@ -18,6 +18,7 @@
 #include <serial.h>
 #include <tests.h>
 
+#define NOPRINT 1
 /*
  * We cannot use assert() for below printk() code as
  * the assert code istelf internally calls printk().
@@ -401,26 +402,6 @@ void putc(char c)
  * Kernel print, for VGA and serial outputs
  */
 
-static char kbuf[1024];
-static spinlock_t kbuf_lock = SPIN_UNLOCKED();
-void printk(const char *fmt, ...)
-{
-	va_list args;
-	int n;
-
-	/* NOTE! This will deadlock if the code enclosed
-	 * by this lock triggered exceptions: the default
-	 * exception handlers already call printk() */
-	spin_lock(&kbuf_lock);
-
-	va_start(args, fmt);
-	n = vsnprintf(kbuf, sizeof(kbuf), fmt, args);
-	va_end(args);
-
-	vga_write(kbuf, n, VGA_DEFAULT_COLOR);
-
-	spin_unlock(&kbuf_lock);
-}
 
 static char sbuf[1024];
 static spinlock_t sbuf_lock = SPIN_UNLOCKED();
@@ -438,6 +419,43 @@ void prints(const char *fmt, ...)
 	serial_write(sbuf, n);
 
 	spin_unlock(&sbuf_lock);
+}
+
+
+static char kbuf[1024];
+static spinlock_t kbuf_lock = SPIN_UNLOCKED();
+void printk(const char *fmt, ...)
+{
+#if NOPRINT
+	va_list args;
+	int n;
+
+	spin_lock(&sbuf_lock);
+
+	va_start(args, fmt);
+	n = vsnprintf(sbuf, sizeof(sbuf), fmt, args);
+	va_end(args);
+
+	serial_write(sbuf, n);
+
+	spin_unlock(&sbuf_lock);
+#else
+	va_list args;
+	int n;
+
+	/* NOTE! This will deadlock if the code enclosed
+	 * by this lock triggered exceptions: the default
+	 * exception handlers already call printk() */
+	spin_lock(&kbuf_lock);
+
+	va_start(args, fmt);
+	n = vsnprintf(kbuf, sizeof(kbuf), fmt, args);
+	va_end(args);
+
+	vga_write(kbuf, n, VGA_DEFAULT_COLOR);
+
+	spin_unlock(&kbuf_lock);
+#endif
 }
 
 /*

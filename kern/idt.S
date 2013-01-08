@@ -227,7 +227,7 @@ irq_end:
  *   use for the new code running after the handler finishes.
  *
  *   This second stack holds no significant values for us, context
- *   switching code, but holds the values pushed by the to-bo-res-
+ *   switching code, but holds the values pushed by the to-be-res-
  *   umed code path (which is possibly a new schedulable entity).
  *
  * [1] The stack may have been aritificially created at kthread
@@ -260,6 +260,10 @@ ticks_handler:
 	/* current = next */
 	movq   %rdi, current
 
+	/* Update the page tables */
+	movq   PD_CR3(%rdi), %rax
+	movq   %rax, %cr3
+
 	/* Restore scratch from the new PCB */
 	addq   $PD_PCB, %rdi
 	movq   PCB_RBP(%rdi), %rbp
@@ -280,9 +284,7 @@ ticks_handler:
 	 * - %rsp, %rip, and %rflags will be updated by `iret';
 	 *   CPU will implicitly pop those from the new stack.
 	 */
-
 2:	jmp    irq_end
-
 
 /*
  * Interrupt handlers stubs ..
@@ -307,6 +309,14 @@ halt_cpu_ipi_handler:
 	cli
 1:	hlt
 	jmp   1b
+
+
+# TODO: Save the values saved in the registers by the processor
+.globl syscall
+syscall:
+1:
+	call __syscall
+	sysretq
 
 /*
  * PIT periodic mode test handler

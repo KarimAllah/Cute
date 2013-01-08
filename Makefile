@@ -6,6 +6,10 @@
 CC	= gcc
 CPP	= cpp
 LD	= ld
+OBJCOPY = objcopy
+
+EMULATOR = /home/karim/sources/qemu/qemu/build/x86_64-softmmu/qemu-system-x86_64
+EMULATOR_OPTIONS = -smp 4 -display sdl -vga std -serial stdio -no-reboot
 
 #
 # Machine-dependent C Flags:
@@ -74,6 +78,7 @@ CDIALECT_FLAGS =			\
 #
 COPT_FLAGS =				\
   -O3					\
+  -g					\
   -pipe
 
 #
@@ -171,7 +176,8 @@ DEV_OBJS =		\
   dev/apic.o		\
   dev/ioapic.o		\
   dev/pit.o		\
-  dev/keyboard.o
+  dev/keyboard.o \
+  dev/vga.o
 
 # Ext2 file system
 DEPS_DIRS		+= $(DEPS_ROOT_DIR)/ext2
@@ -206,6 +212,7 @@ KERN_OBJS =		\
   kern/mptables.o	\
   kern/smpboot.o	\
   kern/sched.o		\
+  kern/syscall.o	\
   kern/kthread.o	\
   kern/panic.o		\
   kern/percpu.o		\
@@ -250,6 +257,12 @@ RAMDISK_BIN    = build/ramdisk
 FINAL_HD_IMAGE = build/hd-image
 BUILD_SCRIPT   = tools/build-hdimage.py
 
+.PHONY: user
+user:
+	$(Q) $(CC) -O3 -c tools/dummy_proc.c -o tools/tmp.o
+	$(Q) $(LD) -T tools/user.ld tools/tmp.o -o tools/dummy_proc.o
+	$(Q) $(OBJCOPY) -O binary tools/dummy_proc.o tools/dummy_proc
+
 final: $(BUILD_DIRS) $(FINAL_HD_IMAGE)
 	$(E) "Disk image ready:" $(FINAL_HD_IMAGE)
 
@@ -259,11 +272,15 @@ $(FINAL_HD_IMAGE): $(BOOT_BIN) $(RAMDISK_BIN) $(BUILD_SCRIPT)
 
 # If no ramdisk image exist, create an empty placeholder.
 # Also create the 'build/' directory if it doesn't exist.
-$(RAMDISK_BIN):
+$(RAMDISK_BIN): user
 	$(Q) test -d 'build' || (echo "  MKDIR     build")
 	$(Q) mkdir -p build
-	$(E) "  TOUCH    " $@
-	$(Q) touch $@
+	$(Q) dd if=/dev/zero of=$(RAMDISK_BIN) count=1 bs=100K
+	$(Q) mkfs.ext2 -F build/ramdisk
+	$(Q) sudo mount -o loop $(RAMDISK_BIN) /mnt
+	$(Q) cp tools/dummy_proc /mnt/init
+	$(Q) sudo umount /mnt
+
 
 #
 # Build kernel + bootsector ELF and binaries
@@ -316,6 +333,14 @@ clean:
 	$(Q) rm -f  $(BOOTSECT_ELF) $(BOOTSECT_BIN)
 	$(Q) rm -f  $(KERNEL_ELF) $(KERNEL_BIN)
 	$(Q) rm -f  $(BOOT_BIN) $(FINAL_HD_IMAGE)
+	$(Q) rm -f tools/dummy_proc.o tools/dummy_proc
+	$(Q) rm -f build/ramdisk
+
+run: final user $(RAMDISK_BIN)
+	$(Q) $(EMULATOR) $(EMULATOR_OPTIONS) $(FINAL_HD_IMAGE)
+
+debug: final user $(RAMDISK_BIN)
+	gdb $(EMULATOR)
 
 # Include generated dependency files
 # `-': no error, not even a warning, if any of the given

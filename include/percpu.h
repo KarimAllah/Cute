@@ -118,6 +118,7 @@
  */
 struct percpu {
 	struct proc *__current;		/* Descriptor of the ON_CPU thread */
+	struct tss tss;
 	int apic_id;			/* Local APIC ID */
 	uintptr_t self;			/* Address of this per-CPU area */
 	struct percpu_sched sched;
@@ -310,7 +311,7 @@ static void __unused percpu_run_tests(void) { }
 
 #else
 
-#define current		%gs:0x0
+#define current		%gs:0x00
 
 #endif /* __ASSEMBLY */
 

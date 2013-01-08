@@ -110,8 +110,53 @@ static inline void pcb_init(struct pcb *pcb)
  * Process descriptor; one for each process
  */
 struct proc {
+	/* Never change the positions of these fields without updating offset macros */
 	uint64_t pid;
 	struct pcb pcb;			/* Hardware state (for ctxt switch) */
+	/*
+	 * "One TSS per CPU Vs. one TSS per proc" and "One Kernel stack per CPU Vs. One kernel stack per proc"
+	 * We choose one TSS per proc and one kernel stack per proc.
+	 *
+	 * Each user space proc has a user stack allocated from the user address space that can be swapped out
+	 * and a kernel thread that can't be swapped. The kernel thread is going to be used during syscalls and will be
+	 * used for interrupts that will happen during the execution time of this thread on this cpu.
+	 * Threads can be:
+	 * 1- Kernel threads ( only has a kernel stack ) TODO: Executing user space code from kernel threads.
+	 * 2- User threads.
+	 *
+	 * We have to make sure that the SP0 and SP3 in TSS always point to the correct value during any priviledge changes.
+	 *
+	 * All privilege changes in our kernel:
+	 * 1- syscall ( R3 to R0 ), user threads only
+	 * 2- Return from syscall ( R0 to R3 ), user threads only
+	 * 3- Interrupt during user space execution ( R3 to R0 ), user threads only
+	 * 4- Interrupt during syscall ( R0 to R0 ), user threads only
+	 * 5- Interrupt during kernel thread execution ( R0 to R0 ), kernel threads only
+	 * 6- Return from interrupt to user space ( R0 to R3 ), kernel threads only
+	 * 7- Return from interrupt to kernel space ( R0 to R0 ), both
+	 *
+	 * In (1) and (3): CPU automatically chooses SP from SP0 in TSS. The value of %rsp should be the beginning
+	 * 					of the proc kernel stack.
+	 * In (2), (6), and (7): OS will use certain CPU instructions to force correct values of SP
+	 * 				that was previously pushed to the current stack.
+	 * In (4) and (5): No privilege change occured, so the processor won't change the current SP. It'll use it unchanged.
+	 *
+	 * For (1) and (3): We need to set the SP0 in TSS before giving user space control over the CPU.
+	 * For (2), (6), and (7): We use the interrupt protocol for that.
+	 * For (4) and (5): It's correct by definition.
+	 *
+	 * The conclusion is that we only need to do two things:
+	 * 1- Set SP0 in TSS before scheduling the proc (obviously it only makes sense for user procs since
+	 *  kernel proc don't do syscalls and will never be interrupted while executing in user space by definition).
+	 *
+	 * 2- Make sure that our interrupt protocol will allow us to restore the correct start
+	 *  (exactly where it was previously) for both (2), (6), and (7).
+	 *
+	 */
+	uint64_t kstack;	/* Kernel stack */
+	uint64_t cr3;		/* Physical address */
+	/* End the fixed-position members */
+
 	int state;			/* Current process state */
 	struct list_node pnode;		/* for the runqueue lists */
 	clock_t runtime;		/* # ticks running on the CPU */
@@ -135,6 +180,26 @@ enum proc_state {
 	TD_ONCPU,			/* Currently runnning on the CPU */
 	TD_INVALID,			/* NULL mark */
 };
+
+struct tss {
+	uint32_t reserved_0;
+	uint64_t rsp0;
+	uint64_t rsp1;
+	uint64_t rsp2;
+	uint32_t reserved_1;
+	uint32_t reserved_2;
+	uint64_t ist1;
+	uint64_t ist2;
+	uint64_t ist3;
+	uint64_t ist4;
+	uint64_t ist5;
+	uint64_t ist6;
+	uint64_t ist7;
+	uint32_t reserved_3;
+	uint32_t reserved_4;
+	uint16_t reserved_5;
+	uint16_t io_map_addr;
+} __packed;
 
 static inline void proc_init(struct proc *proc)
 {
@@ -185,6 +250,8 @@ static inline void proc_init(struct proc *proc)
  */
 #define PD_PID		0x0
 #define PD_PCB		0x8
+#define PD_KSTACK	(PCB_SIZE + 0x8)
+#define PD_CR3		(PD_KSTACK + 0x8)
 
 /*
  * IRQ stack protocol offsets
