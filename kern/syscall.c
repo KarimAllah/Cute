@@ -1,10 +1,45 @@
+#include <msr.h>
+#include <kernel.h>
 #include <segment.h>
 #include <syscall.h>
-#include <msr.h>
 
-void __no_return __syscall(void)
+
+static int printf_syscall(void *data)
 {
-	printk("Received a syscall ....\n");
+	printk("syscall msg : %s\n", (char *)data);
+	return 0;
+}
+
+static int null_syscall(void *data)
+{
+	printk("syscall data : %x\n", (char *)data);
+	return 0;
+}
+
+static syscall_handler syscalls[SYSCALL_NR] = {
+		(syscall_handler)printf_syscall,
+		(syscall_handler)null_syscall,
+		(syscall_handler)null_syscall,
+		(syscall_handler)null_syscall,
+		(syscall_handler)null_syscall,
+		(syscall_handler)null_syscall,
+		(syscall_handler)null_syscall,
+		(syscall_handler)null_syscall,
+		(syscall_handler)null_syscall,
+		(syscall_handler)null_syscall
+};
+
+int __syscall(int cmd, void *data)
+{
+	printk("syscall number (%x)\n", cmd);
+
+	if(cmd < SYSCALL_NR - 1)
+		return syscalls[cmd](data);
+	else
+	{
+		printk("invalid syscall\n");
+		return -1;
+	}
 }
 
 void init_syscall(void)

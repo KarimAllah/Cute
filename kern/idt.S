@@ -310,12 +310,23 @@ halt_cpu_ipi_handler:
 1:	hlt
 	jmp   1b
 
-
-# TODO: Save the values saved in the registers by the processor
+/* Syscalls */
 .globl syscall
 syscall:
-1:
-	call __syscall
+	/* No interrupts during syscall */
+	cli
+
+	/* rcx contains the return address. %r15 = %rflags */
+  	pushq	%rcx
+  	pushq	%r15
+
+	movq	%rbx,%rsi
+	movq	%rax,%rdi
+	callq	__syscall
+
+	popq	%r15 //%rflags
+	popq	%rcx
+
 	sysretq
 
 /*

@@ -258,10 +258,18 @@ FINAL_HD_IMAGE = build/hd-image
 BUILD_SCRIPT   = tools/build-hdimage.py
 
 .PHONY: user
-user:
-	$(Q) $(CC) -O3 -c tools/dummy_proc.c -o tools/tmp.o
-	$(Q) $(LD) -T tools/user.ld tools/tmp.o -o tools/dummy_proc.o
-	$(Q) $(OBJCOPY) -O binary tools/dummy_proc.o tools/dummy_proc
+
+CLIB_INCLUDE = -Iuser/libc/include
+CLIB_OBJECTS = user/libc/libc.o
+
+USER_FLAGS = -O0 -nostdinc -nostdlib
+clib:
+	$(Q) $(CC) $(CLIB_INCLUDE) $(USER_FLAGS) -c user/libc/syscall.c -o user/libc/libc.o
+
+user: clib
+	$(Q) $(CC) $(CLIB_INCLUDE) $(USER_FLAGS) -c user/dummy_proc.c -o user/tmp.o
+	$(Q) $(LD) -T user/user.ld user/tmp.o $(CLIB_OBJECTS) -o user/dummy_proc.o
+	$(Q) $(OBJCOPY) -O binary user/dummy_proc.o user/dummy_proc
 
 final: $(BUILD_DIRS) $(FINAL_HD_IMAGE)
 	$(E) "Disk image ready:" $(FINAL_HD_IMAGE)
@@ -278,7 +286,7 @@ $(RAMDISK_BIN): user
 	$(Q) dd if=/dev/zero of=$(RAMDISK_BIN) count=1 bs=100K
 	$(Q) mkfs.ext2 -F build/ramdisk
 	$(Q) sudo mount -o loop $(RAMDISK_BIN) /mnt
-	$(Q) cp tools/dummy_proc /mnt/init
+	$(Q) cp user/dummy_proc /mnt/init
 	$(Q) sudo umount /mnt
 
 
@@ -333,8 +341,9 @@ clean:
 	$(Q) rm -f  $(BOOTSECT_ELF) $(BOOTSECT_BIN)
 	$(Q) rm -f  $(KERNEL_ELF) $(KERNEL_BIN)
 	$(Q) rm -f  $(BOOT_BIN) $(FINAL_HD_IMAGE)
-	$(Q) rm -f tools/dummy_proc.o tools/dummy_proc
+	$(Q) rm -f user/dummy_proc.o user/dummy_proc user/libc/libc.o
 	$(Q) rm -f build/ramdisk
+	$(Q) rm -r build
 
 run: final user $(RAMDISK_BIN)
 	$(Q) $(EMULATOR) $(EMULATOR_OPTIONS) $(FINAL_HD_IMAGE)

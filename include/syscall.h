@@ -6,8 +6,11 @@
 #define CSTAR	0xC0000083
 #define SFMASK	0xC0000084
 
+#define SYSCALL_NR 10
+typedef int (*syscall_handler)(void *);
+
 extern void syscall(void);
-extern void __syscall(void);
+extern int __syscall(int cmd, void *data);
 void init_syscall(void);
 
 #endif
