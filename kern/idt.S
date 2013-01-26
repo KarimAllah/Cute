@@ -313,19 +313,27 @@ halt_cpu_ipi_handler:
 /* Syscalls */
 .globl syscall
 syscall:
-	/* No interrupts during syscall */
+	/* No interrupts during syscall, for now */
 	cli
 
-	/* rcx contains the return address. %r15 = %rflags */
+	/* Apparently changing the CPL using syscall
+	 * doesn't automatically change the stack
+	 * register to use the kernel stack stored in TSS
+	 * TODO: Do that manually before introducing page swapping.
+	 */
+
+	/* rcx contains the return address. %r11 = %rflags */
+  	pushq	%rsp
   	pushq	%rcx
-  	pushq	%r15
+  	pushq	%r11
 
 	movq	%rbx,%rsi
 	movq	%rax,%rdi
 	callq	__syscall
 
-	popq	%r15 //%rflags
+	popq	%r11 //%rflags
 	popq	%rcx
+	popq	%rsp
 
 	sysretq
 
