@@ -26,6 +26,7 @@ typedef struct {
 void vm_init(void);
 void map_range_kernel(uintptr_t vstart, uint64_t vlen, uintptr_t pstart);
 void map_range_user(struct proc *proc, uintptr_t vstart, uint64_t vlen, uintptr_t pstart);
+void copy_address_space(struct proc *dst_proc, struct proc *src_proc);
 void *vm_kmap(uintptr_t pstart, uint64_t len);
 
 #if	VM_TESTS

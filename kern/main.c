@@ -30,6 +30,7 @@
 #include <ramdisk.h>
 #include <e820.h>
 #include <mm.h>
+#include <binder.h>
 #include <syscall.h>
 #include <vm.h>
 #include <paging.h>
@@ -138,6 +139,12 @@ void __no_return kernel_start(void)
 	 * early on .. */
 	kmalloc_init();
 
+	/* Create our current kstack */
+	uint64_t kstack;
+	kstack = (uint64_t)kmalloc(STACK_SIZE);
+	kstack += STACK_SIZE;
+	current->kstack = kstack;
+
 	/* Never call it before initializing kmalloc */
 	init_tss();
 
@@ -148,6 +155,7 @@ void __no_return kernel_start(void)
 	/* Discover our secondary-CPUs and system IRQs layout before
 	 * initializing the local APICs */
 	mptables_init();
+
 
 	/* Remap and mask the PIC; it's just a disturbance */
 	serial_init();
@@ -182,31 +190,19 @@ void __no_return kernel_start(void)
 	/* Initializing user space */
 	init_syscall();
 
+	/* Init binder subsystem */
+	binder_init();
+
 #define VALUE_AT(addr) (*(unsigned long *)(addr))
 
-	int fd;
 	struct proc *user_proc;
-	struct page *process_page;
-	struct page *stack_page;
-
 	for (int i = 0; i < 1; i++)
 	{
-		user_proc = uthread_create((thread_entry)(USER_START_ADDR), USER_STACK_ADDR + PAGE_SIZE - 0x8, PAGE_SIZE/*stack_size=4Kb*/);
-		printk("Our new thread : %x\n", user_proc);
-
-		// Map process
-		process_page = get_free_page(ZONE_ANY);
-		map_range_user(user_proc, USER_START_ADDR, PAGE_SIZE, page_phys_addr(process_page));
-
-		// Map stack
-		stack_page = get_free_page(ZONE_ANY);
-		map_range_user(user_proc, USER_STACK_ADDR, PAGE_SIZE, page_phys_addr(stack_page));
-
-		fd = sys_open("/init", O_RDONLY, 0);
-		sys_read(fd, page_address(process_page), 1024);
-		sys_close(fd);
+		user_proc = create_proc("/init");
 		thread_start(user_proc);
 	}
+
+	while(1){}
 
 	/* Launch this process */
 	run_test_cases();

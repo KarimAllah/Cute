@@ -9,7 +9,7 @@ LD	= ld
 OBJCOPY = objcopy
 
 EMULATOR = /home/karim/sources/qemu/qemu/build/x86_64-softmmu/qemu-system-x86_64
-EMULATOR_OPTIONS = -smp 4 -display sdl -vga std -serial stdio -no-reboot
+EMULATOR_OPTIONS = -smp 1 -display sdl -vga std -serial stdio -no-reboot
 
 #
 # Machine-dependent C Flags:
@@ -217,6 +217,9 @@ KERN_OBJS =		\
   kern/panic.o		\
   kern/percpu.o		\
   kern/ramdisk.o	\
+  kern/binder.o		\
+  kern/wait.o		\
+  kern/proc.o		\
   kern/main.o
 
 BOOTSECT_OBJS =		\
@@ -259,17 +262,28 @@ BUILD_SCRIPT   = tools/build-hdimage.py
 
 .PHONY: user
 
-CLIB_INCLUDE = -Iuser/libc/include
-CLIB_OBJECTS = user/libc/libc.o
+CLIB_INCLUDE = -Iuser/libc/include -Iinclude/uapi
+CLIB_OBJECTS = user/libc/syscall.o user/libc/string.o user/libc/printf.o user/libc/binder.o user/libc/malloc.o
 
-USER_FLAGS = -O0 -nostdinc -nostdlib
+USER_FLAGS = -O0 -nostdinc -nostdlib -iwithprefix include -std=gnu99 -fno-builtin
+
 clib:
-	$(Q) $(CC) $(CLIB_INCLUDE) $(USER_FLAGS) -c user/libc/syscall.c -o user/libc/libc.o
+	$(Q) $(CC) $(CLIB_INCLUDE) $(USER_FLAGS) -c user/libc/syscall.c -o user/libc/syscall.o
+	$(Q) $(CC) $(CLIB_INCLUDE) $(USER_FLAGS) -c user/libc/printf.c -o user/libc/printf.o
+	$(Q) $(CC) $(CLIB_INCLUDE) $(USER_FLAGS) -c user/libc/string.c -o user/libc/string.o
+	$(Q) $(CC) $(CLIB_INCLUDE) $(USER_FLAGS) -c user/libc/binder.c -o user/libc/binder.o
+	$(Q) $(CC) $(CLIB_INCLUDE) $(USER_FLAGS) -c user/libc/malloc.c -o user/libc/malloc.o
 
 user: clib
+	# dummy_proc
 	$(Q) $(CC) $(CLIB_INCLUDE) $(USER_FLAGS) -c user/dummy_proc.c -o user/tmp.o
 	$(Q) $(LD) -T user/user.ld user/tmp.o $(CLIB_OBJECTS) -o user/dummy_proc.o
 	$(Q) $(OBJCOPY) -O binary user/dummy_proc.o user/dummy_proc
+	# looper
+	$(Q) $(CC) $(CLIB_INCLUDE) $(USER_FLAGS) -c user/looper.c -o user/tmp.o
+	$(Q) $(LD) -T user/user.ld user/tmp.o $(CLIB_OBJECTS) -o user/looper.o
+	$(Q) $(OBJCOPY) -O binary user/looper.o user/looper
+
 
 final: $(BUILD_DIRS) $(FINAL_HD_IMAGE)
 	$(E) "Disk image ready:" $(FINAL_HD_IMAGE)
@@ -287,6 +301,7 @@ $(RAMDISK_BIN): user
 	$(Q) mkfs.ext2 -F build/ramdisk
 	$(Q) sudo mount -o loop $(RAMDISK_BIN) /mnt
 	$(Q) cp user/dummy_proc /mnt/init
+	$(Q) cp user/looper /mnt/looper
 	$(Q) sudo umount /mnt
 
 
@@ -341,9 +356,10 @@ clean:
 	$(Q) rm -f  $(BOOTSECT_ELF) $(BOOTSECT_BIN)
 	$(Q) rm -f  $(KERNEL_ELF) $(KERNEL_BIN)
 	$(Q) rm -f  $(BOOT_BIN) $(FINAL_HD_IMAGE)
-	$(Q) rm -f user/dummy_proc.o user/dummy_proc user/libc/libc.o
+	$(Q) rm -f user/dummy_proc.o user/dummy_proc user/looper.o user/looper 
+	$(Q) rm -f user/libc/libc.o user/libc/binder.o user/libc/malloc.o
 	$(Q) rm -f build/ramdisk
-	$(Q) rm -r build
+	$(Q) rm -fr build
 
 run: final user $(RAMDISK_BIN)
 	$(Q) $(EMULATOR) $(EMULATOR_OPTIONS) $(FINAL_HD_IMAGE)

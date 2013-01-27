@@ -16,6 +16,11 @@
 
 #include <list.h>
 
+
+enum thread_creation_flags {
+	CLONE_THREAD,
+	COPY_ADDRESS_SPACE
+};
 /*
  * System clock ticks per second
  */
@@ -108,7 +113,9 @@ void sched_enqueue(struct proc *);
 struct proc *sched_tick(void);	/* Avoid GCC warning */
 
 struct proc *kthread_create(thread_entry func);
-struct proc *uthread_create(thread_entry func, uint64_t stack, uint32_t stack_size);
+struct proc *uthread_create(thread_entry func, uint64_t stack, uint32_t stack_size, uint32_t flags);
+struct proc *clone_proc(int flags);
+struct proc *create_proc(char *path);
 void thread_start(struct proc *proc);
 uint64_t kthread_alloc_pid(void);
 

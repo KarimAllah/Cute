@@ -94,12 +94,12 @@ struct proc *kthread_create(thread_entry func)
 }
 
 /*
- * Create a new kernel thread running given function
+ * Create a new user thread running given function
  * code, and attach it to the runqueue.
  *
  * NOTE! given function must exit through a sys_exit system call!
  */
-struct proc *uthread_create(thread_entry func, uint64_t stack, uint32_t stack_size)
+struct proc *uthread_create(thread_entry func, uint64_t stack, uint32_t stack_size, uint32_t __unused flags)
 {
 	/* New thread stack, moving down */
 	stack_size = round_up(stack_size, 8);
@@ -109,7 +109,6 @@ struct proc *uthread_create(thread_entry func, uint64_t stack, uint32_t stack_si
 
 	return thread_create_common(USER_CS | USER_RPL, func, stack);
 }
-
 
 void thread_start(struct proc *proc)
 {

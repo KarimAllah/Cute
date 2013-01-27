@@ -21,6 +21,7 @@
 #include <list.h>
 #include <unrolled_list.h>
 #include <sched.h>
+#include <wait.h>
 #include <x86.h>
 #include <ext2.h>
 
@@ -173,6 +174,13 @@ struct proc {
 		uint preempt_high_prio;	/* cause of a higher-priority thread */
 		uint preempt_slice_end; /* cause of timeslice end */
 	} stats;
+
+	/* Objects attached to this object */
+	struct list_node attached_objects;
+
+	/* Work for this thread to do */
+	struct list_node todo;
+	struct wait_event work;
 };
 
 enum proc_state {
@@ -204,6 +212,10 @@ struct tss {
 static inline void proc_init(struct proc *proc)
 {
 	memset(proc, 0, sizeof(struct proc));
+
+	list_init(&proc->attached_objects);
+	list_init(&proc->todo);
+	wait_init(&proc->work);
 
 	proc->pid = kthread_alloc_pid();
 	pcb_init(&proc->pcb);
