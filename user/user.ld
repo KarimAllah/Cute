@@ -22,11 +22,18 @@ SECTIONS
 	/* Where the bootsector loads us */
 	. = 0x2000000;
 	.text : {
-	       *(.text)
+		*(.text)
     }
-        
+    
+    .data : {
+    	*(.data)
+    }
     .rodata : {
-    		*(.rodata)
+    	*(.rodata)
+    }
+    
+    .bss : {
+    	*(.bss)
     }
 
 	/DISCARD/ : {
