@@ -95,7 +95,7 @@ static void map_pml2_range(struct pml2e *pml2_base, uintptr_t vstart,
 
 		pml1_base = VIRTUAL((uintptr_t)pml2e->pt_base << PAGE_SHIFT);
 
-		if (pml2e == pml2_base + pml1_index(vend - 1)) /* Last entry */
+		if (pml2e == pml2_base + pml2_index(vend - 1)) /* Last entry */
 			end = vend;
 		else
 			end = vstart + PML2_ENTRY_MAPPING_SIZE;

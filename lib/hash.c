@@ -57,7 +57,7 @@ void hash_free(struct hash *hash)
  * Find the element identified by @elem_id in the given hash
  * repository.  Return NULL in case of non-existence.
  */
-static void *hash_find_elem(struct hash *hash, uint elem_id)
+static void *hash_find_elem(struct hash *hash, uint64_t elem_id)
 {
 	struct hash_elem *helem;
 	int idx;
@@ -66,7 +66,7 @@ static void *hash_find_elem(struct hash *hash, uint elem_id)
 	idx = elem_id % hash->len;
 	list_for_each(&hash->nodes_array[idx], helem, node) {
 		if (helem->id == elem_id)
-			return helem;
+			return (void *)helem->id;
 	}
 	return NULL;
 }
@@ -75,19 +75,20 @@ static void *hash_find_elem(struct hash *hash, uint elem_id)
  * Insert given element in the hash repository. @elem is a
  * pointer to the structure to be inserted.
  */
-void hash_insert(struct hash *hash, void *elem)
+uint64_t hash_insert(struct hash *hash, void *elem)
 {
 	struct hash_elem *helem;
 	int idx;
 
-	helem = elem;
-	if (hash_find_elem(hash, helem->id) != NULL)
+	if (hash_find_elem(hash, (uint64_t)elem) != NULL)
 		panic("Hash: Inserting element with ID #%lu, which "
-		      "already exists!", helem->id);
+		      "already exists!", (uint64_t)elem);
 
+	helem = (struct hash_elem *)kmalloc(sizeof(struct hash_elem));
+	helem->id = (uint64_t)elem;
 	idx = helem->id % hash->len;
-	assert(list_empty(&helem->node));
 	list_add(&hash->nodes_array[idx], &helem->node);
+	return (uint64_t)elem;
 }
 
 /*

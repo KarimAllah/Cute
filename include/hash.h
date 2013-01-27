@@ -7,7 +7,7 @@
 struct hash;
 struct hash *hash_new(uint len);
 void hash_free(struct hash *hash);
-void hash_insert(struct hash *hash, void *elem);
+uint64_t hash_insert(struct hash *hash, void *elem);
 void *hash_find(struct hash *hash, uint64_t elem_id);
 void hash_remove(struct hash *hash, uint64_t elem_id);
 
