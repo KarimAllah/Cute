@@ -1,6 +1,8 @@
 #ifndef _SYSCALL_H
 #define _SYSCALL_H
 
+#include <uapi/cute/syscall.h>
+
 #define STAR	0xC0000081
 #define LSTAR	0xC0000082
 #define CSTAR	0xC0000083
