@@ -313,9 +313,6 @@ halt_cpu_ipi_handler:
 /* Syscalls */
 .globl syscall
 syscall:
-	/* No interrupts during syscall, for now */
-	cli
-
 	/* Apparently changing the CPL using syscall
 	 * doesn't automatically change the stack
 	 * register to use the kernel stack stored in TSS
