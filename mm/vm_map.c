@@ -208,7 +208,6 @@ static void map_pml4_range(struct pml4e *pml4_base, uintptr_t vstart,
 	}
 }
 
-
 static void map_range_common(struct pml4e *pml4, uintptr_t vstart, uint64_t vlen, uintptr_t pstart, bool kernel)
 {
 	map_pml4_range(pml4, vstart, vstart + vlen, pstart, kernel);
@@ -233,6 +232,155 @@ void map_range_user(struct proc *proc, uintptr_t vstart, uint64_t vlen, uintptr_
 {
 	struct pml4e *pml4 = (struct pml4e *)VIRTUAL(proc->cr3);
 	map_range_common(pml4, vstart, vlen, pstart, false);
+}
+
+static void copy_pml1_range(struct pml1e *dst_pml1_base, struct pml1e *src_pml1_base,
+		uintptr_t vstart, uintptr_t vend)
+{
+	struct pml1e *src_pml1e;
+	struct pml1e *dst_pml1e;
+	if ((vend - vstart) > (0x1ULL << PAGE_SHIFT_2MB))
+		panic("A PML2 table cant map ranges > 2-MByte. "
+		      "Given range: 0x%lx - 0x%lx", vstart, vend);
+
+	for (dst_pml1e = dst_pml1_base + pml1_index(vstart), src_pml1e = src_pml1_base + pml1_index(vstart);
+		src_pml1e <= src_pml1_base + pml1_index(vend - 1);
+		src_pml1e++) {
+		*dst_pml1e = *src_pml1e;
+		vstart += PML1_ENTRY_MAPPING_SIZE;
+	}
+}
+
+static void copy_pml2_range(struct pml2e *dst_pml2_base, struct pml2e *src_pml2_base, uintptr_t vstart,
+			   uintptr_t vend)
+{
+	struct pml1e *src_pml1_base;
+	struct pml1e *dst_pml1_base;
+	struct pml2e *src_pml2e;
+	struct pml2e *dst_pml2e;
+	struct page *page;
+	uintptr_t end;
+
+	assert(page_aligned(src_pml2_base));
+
+	if ((vend - vstart) > (0x1ULL << 30))
+		panic("A PML2 table cant map ranges > 1-GByte. "
+		      "Given range: 0x%lx - 0x%lx", vstart, vend);
+
+	for (dst_pml2e = dst_pml2_base + pml2_index(vstart), src_pml2e = src_pml2_base + pml2_index(vstart);
+	     src_pml2e <= src_pml2_base + pml2_index(vend - 1);
+	     dst_pml2e++, src_pml2e++) {
+
+		if (!src_pml2e->present)
+			continue;
+
+		*dst_pml2e = *src_pml2e;
+		page = get_zeroed_page(ZONE_1GB);
+		dst_pml2e->pt_base = page_phys_addr(page) >> PAGE_SHIFT;
+
+		src_pml1_base = VIRTUAL((uintptr_t)src_pml2e->pt_base << PAGE_SHIFT);
+		dst_pml1_base = VIRTUAL((uintptr_t)src_pml2e->pt_base << PAGE_SHIFT);
+
+		if (src_pml2e == src_pml2_base + pml1_index(vend - 1)) /* Last entry */
+			end = vend;
+		else
+			end = vstart + PML2_ENTRY_MAPPING_SIZE;
+
+		copy_pml1_range(dst_pml1_base, src_pml1_base, vstart, end);
+
+		vstart += PML2_ENTRY_MAPPING_SIZE;
+	}
+}
+
+static void copy_pml3_range(struct pml3e *dst_pml3_base, struct pml3e *src_pml3_base,
+			uintptr_t vstart, uintptr_t vend)
+{
+	struct pml3e *src_pml3e;
+	struct pml3e *dst_pml3e;
+	struct pml2e *src_pml2_base;
+	struct pml2e *dst_pml2_base;
+	struct page *page;
+	uintptr_t end;
+
+	assert(page_aligned(src_pml3_base));
+
+	if ((vend - vstart) > PML3_MAPPING_SIZE)
+		panic("A PML3 table can't copy ranges > 512-GBytes. "
+		      "Given range: 0x%lx - 0x%lx", vstart, vend);
+
+	for (dst_pml3e = dst_pml3_base + pml3_index(vstart), src_pml3e = src_pml3_base + pml3_index(vstart);
+	     src_pml3e <= src_pml3_base + pml3_index(vend - 1);
+	     dst_pml3e++, src_pml3e++) {
+		assert((char *)src_pml3e < (char *)src_pml3_base + PAGE_SIZE);
+		if (!src_pml3e->present)
+			continue;
+
+		*dst_pml3e = *src_pml3e;
+		page = get_zeroed_page(ZONE_1GB);
+		dst_pml3e->pml2_base = page_phys_addr(page) >> PAGE_SHIFT;
+
+		src_pml2_base = VIRTUAL((uintptr_t)src_pml3e->pml2_base << PAGE_SHIFT);
+		dst_pml2_base = VIRTUAL((uintptr_t)dst_pml3e->pml2_base << PAGE_SHIFT);
+
+		if (src_pml3e == src_pml3_base + pml3_index(vend - 1)) /* Last entry */
+			end = vend;
+		else
+			end = vstart + PML3_ENTRY_MAPPING_SIZE;
+
+		copy_pml2_range(dst_pml2_base, src_pml2_base, vstart, end);
+
+		vstart += PML3_ENTRY_MAPPING_SIZE;
+	}
+}
+
+static void copy_pml4_range(struct pml4e *dst_pml4_base, struct pml4e *src_pml4_base, uintptr_t vstart,
+			   uintptr_t vend)
+{
+	struct pml4e *src_pml4e;
+	struct pml4e *dst_pml4e;
+	struct pml3e *src_pml3_base;
+	struct pml3e *dst_pml3_base;
+	struct page *page;
+	uintptr_t end;
+
+	assert(page_aligned(src_pml4_base));
+
+	if ((vend - vstart) > PML4_MAPPING_SIZE)
+		panic("copying a virtual range that exceeds the 48-bit "
+		      "architectural limit: 0x%lx - 0x%lx", vstart, vend);
+
+	for (dst_pml4e = dst_pml4_base + pml4_index(vstart), src_pml4e = src_pml4_base + pml4_index(vstart);
+	     src_pml4e <= src_pml4_base + pml4_index(vend - 1);
+	     dst_pml4e++, src_pml4e++) {
+		assert((char *)src_pml4e < (char *)src_pml4_base + PAGE_SIZE);
+		if (!src_pml4e->present)
+			continue;
+
+		*dst_pml4e = *src_pml4e;
+		page = get_zeroed_page(ZONE_1GB);
+		dst_pml4e->pml3_base = page_phys_addr(page) >> PAGE_SHIFT;
+
+		src_pml3_base = VIRTUAL((uintptr_t)src_pml4e->pml3_base << PAGE_SHIFT);
+		dst_pml3_base = VIRTUAL((uintptr_t)dst_pml4e->pml3_base << PAGE_SHIFT);
+
+		if (src_pml4e == src_pml4_base + pml4_index(vend - 1)) /* Last entry */
+			end = vend;
+		else
+			end = vstart + PML4_ENTRY_MAPPING_SIZE;
+
+		copy_pml3_range(dst_pml3_base, src_pml3_base, vstart, end);
+
+		vstart += PML4_ENTRY_MAPPING_SIZE;
+	}
+}
+
+void copy_address_space(struct proc *dst_proc, struct proc *src_proc)
+{
+	uintptr_t vstart = 0x0;
+	uint64_t vlen = PAGE_SIZE * 1024;
+	struct pml4e *src_pml4 = (struct pml4e *)VIRTUAL(src_proc->cr3);
+	struct pml4e *dst_pml4 = (struct pml4e *)VIRTUAL(dst_proc->cr3);
+	copy_pml4_range(dst_pml4, src_pml4, vstart, vstart + vlen);
 }
 
 /*
