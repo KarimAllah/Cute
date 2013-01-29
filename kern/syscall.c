@@ -60,8 +60,18 @@ static int allocate(uint64_t start, int32_t size)
 static int vmmap_syscall(void *data)
 {
 	struct vmmap *map = (struct vmmap *)data;
-	if (map->flags & MMAP_ANONYMOUS)
-		return allocate(map->start, map->size);
+	switch(map->target)
+	{
+	case MEMORY_ALLOCATOR:
+		return allocate(map->vstart, map->size);
+		break;
+	case MEMORY_MAPPER:
+		map_range_user(current, map->vstart, map->size, map->offset);
+		break;
+	default:
+		printk("Wrong target\n");
+		break;
+	}
 	return -1;
 }
 

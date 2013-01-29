@@ -2,6 +2,7 @@
 #define _VGA_H
 
 #include <kernel.h>
+#include <uapi/cute/vga.h>
 
 /*
  * VGA Colors
@@ -77,14 +78,6 @@ typedef struct {
 } vidmem_dac_palette_t;
 
 typedef struct {
-	uint16_t x;
-	uint16_t y;
-	uint16_t width;
-	uint16_t height;
-	unsigned char *pixmap;
-} vidmem_plane_t;
-
-typedef struct {
 	uint16_t width;
 	uint16_t height;
 	uint8_t bpp; // bytes per pixel
@@ -98,7 +91,7 @@ uint8_t read_vga_register(register_set_t target, uint8_t index);
 void write_vga_register(register_set_t target, uint8_t index, uint8_t value);
 void load_dac_palette(vidmem_dac_palette_t *palette);
 void load_mode(vidmem_vga_mode_t mode);
-void clear_screen(uint8_t color);
+void fill_screen(uint8_t color);
 void load_palette(void);
 void set_mode13(void);
 void vga_init(vidmem_vga_mode_t mode);

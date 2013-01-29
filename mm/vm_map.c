@@ -128,6 +128,7 @@ static void map_pml3_range(struct pml3e *pml3_base, uintptr_t vstart,
 		panic("A PML3 table can't map ranges > 512-GBytes. "
 		      "Given range: 0x%lx - 0x%lx", vstart, vend);
 
+	int x = 0;
 	for (pml3e = pml3_base + pml3_index(vstart);
 	     pml3e <= pml3_base + pml3_index(vend - 1);
 	     pml3e++) {
@@ -468,7 +469,7 @@ void vm_init(void)
 	phys_end = e820_get_phys_addr_end();
 	phys_end = round_up(phys_end, PAGE_SIZE_2MB);
 	map_range_kernel(KERN_PAGE_OFFSET, phys_end, KERN_PHYS_OFFSET);
-	printk("Memory: Mappnig range 0x%lx -> 0x%lx to physical 0x0\n",
+	printk("Memory: Mapping range 0x%lx -> 0x%lx to physical 0x0\n",
 	       KERN_PAGE_OFFSET, KERN_PAGE_OFFSET + phys_end);
 
 	/* Heaven be with us .. */

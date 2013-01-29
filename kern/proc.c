@@ -41,10 +41,11 @@ struct proc *create_proc(char *path)
 	struct page *page;
 	int32_t size = USER_SIZE;
 	uint64_t vaddr = USER_START_ADDR;
+	uint64_t index = 0;
 	do {
 		page = get_free_page(ZONE_ANY);
 		map_range_user(user_proc, vaddr, PAGE_SIZE, page_phys_addr(page));
-		sys_read(fd, page_address(page), PAGE_SIZE);
+		uint64_t read_size = sys_read(fd, page_address(page), PAGE_SIZE);
 		size -= PAGE_SIZE;
 		vaddr += PAGE_SIZE;
 	} while (size >= 0);

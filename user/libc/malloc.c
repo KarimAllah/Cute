@@ -11,12 +11,12 @@
 static bool initialized = false;
 static uint64_t cur_addr = USER_MALLOC_ADDR;
 
-static int mmap(uint64_t start, int32_t size, uint32_t flags)
+static int mmap(uint64_t start, int32_t size)
 {
 	struct vmmap map;
-	map.start = start;
+	map.vstart = start;
+	map.target = MEMORY_ALLOCATOR;
 	map.size = size;
-	map.flags = flags;
 	return syscall(SYSCALL_VMMAP, (void *)&map);
 }
 
@@ -24,7 +24,7 @@ static void _init()
 {
 	if(initialized)
 		return;
-	mmap(cur_addr, USER_MALLOC_SIZE, MMAP_ANONYMOUS);
+	mmap(cur_addr, USER_MALLOC_SIZE);
 	initialized = true;
 }
 
@@ -36,4 +36,14 @@ void *malloc(uint32_t size)
 	addr = cur_addr;
 	cur_addr += size;
 	return (void *)addr;
+}
+
+int vm_map(uint64_t vstart, uint64_t size, uint64_t pstart)
+{
+	struct vmmap map;
+	map.vstart = vstart;
+	map.offset = pstart;
+	map.target = MEMORY_MAPPER;
+	map.size = size;
+	return syscall(SYSCALL_VMMAP, (void *)&map);
 }

@@ -283,7 +283,10 @@ user: clib
 	$(Q) $(CC) $(CLIB_INCLUDE) $(USER_FLAGS) -c user/looper.c -o user/tmp.o
 	$(Q) $(LD) -T user/user.ld user/tmp.o $(CLIB_OBJECTS) -o user/looper.o
 	$(Q) $(OBJCOPY) -O binary user/looper.o user/looper
-
+	# vga_worker
+	$(Q) $(CC) $(CLIB_INCLUDE) $(USER_FLAGS) -c user/vga_worker.c -o user/tmp.o
+	$(Q) $(LD) -T user/user.ld user/tmp.o $(CLIB_OBJECTS) -o user/vga_worker.o
+	$(Q) $(OBJCOPY) -O binary user/vga_worker.o user/vga_worker
 
 final: $(BUILD_DIRS) $(FINAL_HD_IMAGE)
 	$(E) "Disk image ready:" $(FINAL_HD_IMAGE)
@@ -302,6 +305,7 @@ $(RAMDISK_BIN): user
 	$(Q) sudo mount -o loop $(RAMDISK_BIN) /mnt
 	$(Q) cp user/dummy_proc /mnt/init
 	$(Q) cp user/looper /mnt/looper
+	$(Q) cp user/vga_worker /mnt/vga_worker
 	$(Q) sudo umount /mnt
 
 
@@ -356,7 +360,7 @@ clean:
 	$(Q) rm -f  $(BOOTSECT_ELF) $(BOOTSECT_BIN)
 	$(Q) rm -f  $(KERNEL_ELF) $(KERNEL_BIN)
 	$(Q) rm -f  $(BOOT_BIN) $(FINAL_HD_IMAGE)
-	$(Q) rm -f user/dummy_proc.o user/dummy_proc user/looper.o user/looper 
+	$(Q) rm -f user/dummy_proc.o user/dummy_proc user/looper.o user/looper user/vga_worker.o user/vga_worker
 	$(Q) rm -f user/libc/libc.o user/libc/binder.o user/libc/malloc.o
 	$(Q) rm -f build/ramdisk
 	$(Q) rm -fr build

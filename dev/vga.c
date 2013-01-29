@@ -1,11 +1,10 @@
 #include <io.h>
 #include <vm.h>
 #include <vga.h>
-#include <sched.h>
 #include <kernel.h>
 #include <kmalloc.h>
 
-#include "logo.h"
+#include <uapi/cute/logo.h>
 
 vidmem_plane_t vga_logo;
 vm_memory_range_t vga_map;
@@ -495,18 +494,6 @@ void write_vga_register(register_set_t target, uint8_t index, uint8_t value)
 	}
 }
 
-void __no_return vga_worker()
-{
-	do {
-		busy_wait(0xFFFFFF);
-		clear_screen(0xFF);
-		busy_wait(0xFFFFFF);
-		clear_screen(0x00);
-		busy_wait(0xFFFFFF);
-		render_plane(&vga_logo);
-	} while(1);
-}
-
 void load_mode(vidmem_vga_mode_t mode)
 {
 	vidmem_register_t *reg = &vga_modes_registers[mode][0];
@@ -540,7 +527,7 @@ void load_mode(vidmem_vga_mode_t mode)
 	}
 	vga_map.start = (uint64_t)vm_kmap(vga_map.start, vga_map.size);
 
-	clear_screen(0x00);
+	fill_screen(0x00);
 
 	vga_logo.x = 0;
 	vga_logo.y = 0;
@@ -549,7 +536,7 @@ void load_mode(vidmem_vga_mode_t mode)
 	vga_logo.pixmap = logo_bitmap;
 }
 
-void clear_screen(uint8_t color)
+void fill_screen(uint8_t color)
 {
 	uint64_t cur_addr;
 	for(cur_addr = vga_map.start; cur_addr < (vga_map.start + vga_map.size);cur_addr+=1)
@@ -585,6 +572,6 @@ exit_loop:
 void vga_init(vidmem_vga_mode_t vga_mode)
 {
 	load_mode(vga_mode);
-	struct proc *vga_proc = kthread_create(vga_worker);
-	thread_start(vga_proc);
+	/* load logo */
+	render_plane(&vga_logo);
 }
