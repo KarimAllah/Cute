@@ -34,6 +34,10 @@
  * with `1' being the lowest priority, and `15' being the highest.
  */
 
+// Vector exceptions
+
+#define PAGE_FAULT 14
+
 // Priority 0xf - Highest priority
 #define TICKS_IRQ_VECTOR	0xf0
 #define HALT_CPU_IPI_VECTOR	0xf1

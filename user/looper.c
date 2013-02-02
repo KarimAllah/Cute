@@ -1,6 +1,7 @@
+#include <exit.h>
 #include <stdio.h>
-#include <syscall.h>
 #include <binder.h>
+#include <syscall.h>
 
 void _start()
 {
@@ -9,5 +10,5 @@ void _start()
 	printf("The returned handle : %llx\n", handle);
 	object_request(handle, (void *)0x10000);
 	printf("Completed our request\n");
-	while(1){}
+	exit_app();
 }

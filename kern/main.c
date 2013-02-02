@@ -47,6 +47,7 @@ static void setup_idt(void)
 	for (int i = 0; i < EXCEPTION_GATES; i ++)
 		set_intr_gate(i, &idt_exception_stubs[i]);
 
+	set_intr_gate(PAGE_FAULT, page_fault);
 	set_intr_gate(HALT_CPU_IPI_VECTOR, halt_cpu_ipi_handler);
 
 	load_idt(&idtdesc);

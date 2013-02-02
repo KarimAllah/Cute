@@ -318,6 +318,26 @@ static inline uint64_t get_cr3(void)
 	return cr3;
 }
 
+static inline void load_cr2(uint64_t cr2)
+{
+	asm volatile("mov %0, %%cr2"
+		     :
+		     :"r"(cr2)
+		     :"cc", "memory");
+}
+
+static inline uint64_t get_cr2(void)
+{
+	uint64_t cr2;
+
+	asm volatile("mov %%cr2, %0"
+		     :"=r"(cr2)
+		     :
+		     :"cc", "memory");
+
+	return cr2;
+}
+
 #else /* __ASSEMBLY__ */
 
 #define KTEXT_PAGE_OFFSET	0xffffffff80000000

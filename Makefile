@@ -218,6 +218,7 @@ KERN_OBJS =		\
   kern/percpu.o		\
   kern/ramdisk.o	\
   kern/binder.o		\
+  kern/paging.o		\
   kern/wait.o		\
   kern/proc.o		\
   kern/main.o
@@ -263,16 +264,19 @@ BUILD_SCRIPT   = tools/build-hdimage.py
 .PHONY: user
 
 CLIB_INCLUDE = -Iuser/libc/include -Iinclude/uapi
-CLIB_OBJECTS = user/libc/syscall.o user/libc/string.o user/libc/printf.o user/libc/binder.o user/libc/malloc.o
+CLIB_OBJECTS = user/libc/exit.o user/libc/syscall.o user/libc/string.o user/libc/printf.o user/libc/binder.o user/libc/malloc.o user/libc/ds/trees.o user/libc/ds/lists.o
 
 USER_FLAGS = -O0 -nostdinc -nostdlib -iwithprefix include -std=gnu99 -fno-builtin
 
 clib:
+	$(Q) $(CC) $(CLIB_INCLUDE) $(USER_FLAGS) -c user/libc/exit.c -o user/libc/exit.o
 	$(Q) $(CC) $(CLIB_INCLUDE) $(USER_FLAGS) -c user/libc/syscall.c -o user/libc/syscall.o
 	$(Q) $(CC) $(CLIB_INCLUDE) $(USER_FLAGS) -c user/libc/printf.c -o user/libc/printf.o
 	$(Q) $(CC) $(CLIB_INCLUDE) $(USER_FLAGS) -c user/libc/string.c -o user/libc/string.o
 	$(Q) $(CC) $(CLIB_INCLUDE) $(USER_FLAGS) -c user/libc/binder.c -o user/libc/binder.o
 	$(Q) $(CC) $(CLIB_INCLUDE) $(USER_FLAGS) -c user/libc/malloc.c -o user/libc/malloc.o
+	$(Q) $(CC) $(CLIB_INCLUDE) $(USER_FLAGS) -c user/libc/ds/trees.c -o user/libc/ds/trees.o
+	$(Q) $(CC) $(CLIB_INCLUDE) $(USER_FLAGS) -c user/libc/ds/lists.c -o user/libc/ds/lists.o
 
 user: clib
 	# dummy_proc
@@ -287,6 +291,11 @@ user: clib
 	$(Q) $(CC) $(CLIB_INCLUDE) $(USER_FLAGS) -c user/vga_worker.c -o user/tmp.o
 	$(Q) $(LD) -T user/user.ld user/tmp.o $(CLIB_OBJECTS) -o user/vga_worker.o
 	$(Q) $(OBJCOPY) -O binary user/vga_worker.o user/vga_worker
+	# algorithms
+	$(Q) $(CC) $(CLIB_INCLUDE) $(USER_FLAGS) -c user/algorithms.c -o user/tmp.o
+	$(Q) $(LD) -T user/user.ld user/tmp.o $(CLIB_OBJECTS) -o user/algorithms.o
+	$(Q) $(OBJCOPY) -O binary user/algorithms.o user/algorithms
+
 
 final: $(BUILD_DIRS) $(FINAL_HD_IMAGE)
 	$(E) "Disk image ready:" $(FINAL_HD_IMAGE)
@@ -306,6 +315,7 @@ $(RAMDISK_BIN): user
 	$(Q) cp user/dummy_proc /mnt/init
 	$(Q) cp user/looper /mnt/looper
 	$(Q) cp user/vga_worker /mnt/vga_worker
+	$(Q) cp user/algorithms /mnt/algorithms
 	$(Q) sudo umount /mnt
 
 
@@ -360,8 +370,8 @@ clean:
 	$(Q) rm -f  $(BOOTSECT_ELF) $(BOOTSECT_BIN)
 	$(Q) rm -f  $(KERNEL_ELF) $(KERNEL_BIN)
 	$(Q) rm -f  $(BOOT_BIN) $(FINAL_HD_IMAGE)
-	$(Q) rm -f user/dummy_proc.o user/dummy_proc user/looper.o user/looper user/vga_worker.o user/vga_worker
-	$(Q) rm -f user/libc/libc.o user/libc/binder.o user/libc/malloc.o
+	$(Q) rm -f user/dummy_proc.o user/dummy_proc user/looper.o user/looper user/vga_worker.o user/vga_worker user/algorithms.o user/algorithms
+	$(Q) rm -f user/libc/libc.o user/libc/binder.o user/libc/malloc.o user/libc/exit.o user/libc/ds/trees.o user/libc/ds/lists.o
 	$(Q) rm -f build/ramdisk
 	$(Q) rm -fr build
 

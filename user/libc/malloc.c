@@ -38,6 +38,11 @@ void *malloc(uint32_t size)
 	return (void *)addr;
 }
 
+void free(void *data)
+{
+
+}
+
 int vm_map(uint64_t vstart, uint64_t size, uint64_t pstart)
 {
 	struct vmmap map;

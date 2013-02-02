@@ -128,7 +128,6 @@ static void map_pml3_range(struct pml3e *pml3_base, uintptr_t vstart,
 		panic("A PML3 table can't map ranges > 512-GBytes. "
 		      "Given range: 0x%lx - 0x%lx", vstart, vend);
 
-	int x = 0;
 	for (pml3e = pml3_base + pml3_index(vstart);
 	     pml3e <= pml3_base + pml3_index(vend - 1);
 	     pml3e++) {

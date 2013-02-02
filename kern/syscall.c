@@ -49,7 +49,7 @@ static int allocate(uint64_t start, int32_t size)
 {
 	struct page *page;
 	do {
-		page = get_free_page(ZONE_ANY);
+		page = get_zeroed_page(ZONE_ANY);
 		map_range_user(current, start, PAGE_SIZE, page_phys_addr(page));
 		size -= PAGE_SIZE;
 		start += PAGE_SIZE;

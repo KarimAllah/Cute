@@ -125,6 +125,50 @@ idt_msg:
  * System IRQ handlers
  */
 
+/* Page fault */
+.globl page_fault
+page_fault:
+	pushq	%rdi
+	movq	8(%rsp), %rdi
+
+	//popq	%rdi // error code
+
+	pushq	%rax
+	pushq	%rbx
+	pushq	%rcx
+	pushq	%rdx
+	pushq	%rsi
+	pushq	%r8
+	pushq	%r9
+	pushq	%r10
+	pushq	%r11
+	pushq	%r12
+	pushq	%r13
+	pushq	%r14
+	pushq	%r15
+
+	call	__page_fault
+
+	popq	%r15
+	popq	%r14
+	popq	%r13
+	popq	%r12
+	popq	%r11
+	popq	%r10
+	popq	%r9
+	popq	%r8
+	popq	%rsi
+	popq	%rdx
+	popq	%rcx
+	popq	%rbx
+	popq	%rax
+	popq	%rdi
+
+	// pop the error code from the stack
+	addq	$8, %rsp
+
+	iretq
+
 /*
  * Avoid #GPs: setup an 'ignore' handler for any spurious
  * PIC-triggered IRQ (despite PICs being already masked).
