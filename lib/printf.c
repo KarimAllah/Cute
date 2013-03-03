@@ -300,7 +300,7 @@ int vsnprintf(char *buf, int size, const char *fmt, va_list args)
  * Do not use any assert()s in VGA code! (stack overflow)
  */
 
-#define VGA_BASE		((char *)VIRTUAL(0xb8000))
+#define VGA_BASE		((char *)VIRT(0xb8000))
 #define VGA_MAXROWS		25
 #define VGA_MAXCOLS		80
 #define VGA_DEFAULT_COLOR	VGA_COLOR(VGA_BLACK, VGA_WHITE)

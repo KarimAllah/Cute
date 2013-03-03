@@ -25,8 +25,9 @@
  * supplement and the ELF specification v1.2.
  */
 
-#include <smpboot.h>
-#include <segment.h>
+#include "segment.h"
+#include "smpboot.h"
+
 #include <paging.h>
 #include <x86.h>
 

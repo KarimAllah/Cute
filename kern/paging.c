@@ -8,7 +8,7 @@
 
 #define ALIGN(value, align) ((value) & ~((align) - 1))
 
-void __page_fault(uint32_t err_code) {
+void generic_page_fault(uint32_t err_code) {
 	uint64_t fault_addr = get_cr2();
 
 	printk("Page fault at addr : %llx. During '%s' by '%s'\n", fault_addr, err_code & ERRCODE_RW ? "write" : "read",

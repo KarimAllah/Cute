@@ -8,9 +8,9 @@
  *  the Free Software Foundation, version 2.
  */
 
-#include <segment.h>
 #include <paging.h>
 #include "rmcommon.h"
+#include "segment.h"
 
 .text
 .code32
@@ -326,7 +326,7 @@ startup_64:
 	/* Note!! don't use %rip-relave ops like 'call' here.
 	 * We're now using a virtual %rip, different from the
 	 * physical one we're linked to; use absolute address */
-	movq   $kernel_start, %rax
+	movq   $early_init, %rax
 	jmpq   *%rax
 
 /*
@@ -435,7 +435,7 @@ physical_gdtdesc:
  */
 virtual_gdtdesc:
 	.word  gdt_end - gdt - 1	# limit
-	.quad  VIRTUAL(gdt)		# Base
+	.quad  VIRT(gdt)		# Base
 
 .bss
 

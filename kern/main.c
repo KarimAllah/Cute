@@ -16,19 +16,8 @@
 #include <bitmap.h>
 #include <string.h>
 #include <sections.h>
-#include <segment.h>
-#include <idt.h>
-#include <vectors.h>
-#include <mptables.h>
-#include <serial.h>
-#include <pit.h>
-#include <pic.h>
-#include <apic.h>
-#include <ioapic.h>
-#include <keyboard.h>
 #include <smpboot.h>
 #include <ramdisk.h>
-#include <e820.h>
 #include <mm.h>
 #include <binder.h>
 #include <syscall.h>
@@ -38,25 +27,10 @@
 #include <percpu.h>
 #include <atomic.h>
 #include <sched.h>
-#include <ext2.h>
 #include <file.h>
-#include <vga.h>
-
-static void setup_idt(void)
-{
-	for (int i = 0; i < EXCEPTION_GATES; i ++)
-		set_intr_gate(i, &idt_exception_stubs[i]);
-
-	set_intr_gate(PAGE_FAULT, page_fault);
-	set_intr_gate(HALT_CPU_IPI_VECTOR, halt_cpu_ipi_handler);
-
-	load_idt(&idtdesc);
-}
-
-static void clear_bss(void)
-{
-	memset(__bss_start , 0, __bss_end - __bss_start);
-}
+#include <memory.h>
+#include <idt.h>
+#include <init_array.h>
 
 static void print_info(void)
 {
@@ -98,6 +72,8 @@ static void run_test_cases(void)
 	file_run_tests();
 }
 
+void arch_init(void);
+
 /*
  * Bootstrap-CPU start; we came from head.S
  */
@@ -113,28 +89,27 @@ void __no_return kernel_start(void)
 	/*
 	 * Memory Management init
 	 */
-	print_info();
+	//print_info();
 
 	/* First, don't override the ramdisk area (if any) */
 	ramdisk_init();
 
-	/* Then discover our physical memory map .. */
-	e820_init();
-
 	/* and tokenize the available memory into allocatable pages */
-	pagealloc_init();
+	memory_init();
 
 	/*
 	 * Very-early setup: Do not call any code that will use
 	 * `current', per-CPU vars, or a spin lock.
 	 */
-	setup_idt();
+	arch_setup_idt();
+
 
 	schedulify_this_code_path(BOOTSTRAP);
 
 	/* With the page allocator in place, git rid of our temporary
 	 * early-boot page tables and setup dynamic permanent ones */
 	vm_init();
+
 
 	/* MM basics done, enable dynamic heap memory to kernel code
 	 * early on .. */
@@ -146,53 +121,16 @@ void __no_return kernel_start(void)
 	kstack += STACK_SIZE;
 	current->kstack = kstack;
 
-	/* Never call it before initializing kmalloc */
-	init_tss();
-
-	/*
-	 * Secondary-CPUs startup
-	 */
-
-	/* Discover our secondary-CPUs and system IRQs layout before
-	 * initializing the local APICs */
-	mptables_init();
-
-
-	/* Remap and mask the PIC; it's just a disturbance */
-	serial_init();
-	pic_init();
-
-	/* Initialize the APICs (and map their MMIO regs) before enabling
-	 * IRQs, and before firing other cores using Inter-CPU Interrupts */
-	apic_init();
-	ioapic_init();
+	arch_init();
 
 	/* SMP infrastructure ready, fire the CPUs! */
 	smpboot_init();
 
-	keyboard_init();
-
-	/* VGA init */
-#if 1
-	vga_init(VIDMEM_MODE13);
-	render_plane(&vga_logo);
-#endif
+	init_arrays();
 
 	/* Startup finished, roll-in the scheduler! */
-	sched_init();
 	local_irq_enable();
 
-	/*
-	 * Second part of kernel initialization (Scheduler is on!)
-	 */
-
-	ext2_init();
-
-	/* Initializing user space */
-	init_syscall();
-
-	/* Init binder subsystem */
-	binder_init();
 
 #define VALUE_AT(addr) (*(unsigned long *)(addr))
 
@@ -208,4 +146,9 @@ void __no_return kernel_start(void)
 	/* Launch this process */
 	run_test_cases();
 	halt();
+}
+
+void clear_bss(void)
+{
+	memset(__bss_start , 0, __bss_end - __bss_start);
 }

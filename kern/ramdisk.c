@@ -55,7 +55,7 @@ void *ramdisk_memory_area_end(void)
 void ramdisk_init(void)
 {
 	/* Ramdisk header is loaded directly after kernel image */
-	rdheader = VIRTUAL(KTEXT_PHYS(__kernel_end));
+	rdheader = VIRT(KTEXT_PHYS(__kernel_end));
 	if (memcmp(rdheader->start_signature, RDSIG_START, RDSIG_LEN))
 		panic("Ramdisk: Invalid header start signature");
 	if (memcmp(rdheader->end_signature, RDSIG_END, RDSIG_LEN))

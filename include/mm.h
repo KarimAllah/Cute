@@ -46,6 +46,8 @@
 #include <paging.h>
 #include <tests.h>
 
+#include <arch/mm.h>
+
 /*
  * Page allocator Zones
  *
@@ -136,7 +138,7 @@ static inline void page_init(struct page *page, uintptr_t phys_addr)
  */
 static inline void *page_address(struct page *page)
 {
-	return VIRTUAL((uintptr_t)page->pfn << PAGE_SHIFT);
+	return VIRT((uintptr_t)page->pfn << PAGE_SHIFT);
 }
 
 /*
@@ -168,8 +170,9 @@ struct page *get_zeroed_page(enum zone_id zid);
 void free_page(struct page *page);
 
 struct page *addr_to_page(void *addr);
+void reserve_physical_range(void *paddr, uint64_t num_pages);
 
-void pagealloc_init(void);
+void pagealloc_init(uint64_t avail_ranges, uint64_t avail_pages);
 
 /*
  * Test cases driver

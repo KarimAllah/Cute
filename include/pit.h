@@ -1,8 +1,9 @@
 #ifndef _PIT_H
 #define _PIT_H
 
-#include <stdint.h>
 #include <tests.h>
+#include <kernel.h>
+#include <stdint.h>
 
 void pit_mdelay(int ms);
 void pit_oneshot(int ms);

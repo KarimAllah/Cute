@@ -90,8 +90,8 @@
 /*
  * C code shouldn't be concerned with phys addresses
  */
-#define E820_BASE	VIRTUAL(E820_PHYS_BASE)
-#define E820_MAX	VIRTUAL(E820_PHYS_MAX)
+#define E820_BASE	VIRT(E820_PHYS_BASE)
+#define E820_MAX	VIRT(E820_PHYS_MAX)
 
 /*
  * E820h struct error to string map

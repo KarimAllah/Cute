@@ -33,8 +33,6 @@
 #include <kernel.h>
 #include <percpu.h>
 #include <list.h>
-#include <serial.h>
-#include <segment.h>
 #include <idt.h>
 #include <mm.h>
 #include <apic.h>
@@ -44,6 +42,7 @@
 #include <proc.h>
 #include <kmalloc.h>
 #include <sched.h>
+#include <init_array.h>
 #include <conf_sched.h>
 #include <tests.h>
 
@@ -181,7 +180,7 @@ static void rq_return_proc(struct runqueue *rq, struct proc *proc, int prio)
 
 void sched_enqueue(struct proc *proc)
 {
-	union x86_rflags flags;
+	uint64_t flags;
 
 	flags = local_irq_disable_save();
 
@@ -253,6 +252,8 @@ static struct proc *dispatch_runnable_proc(int *ret_prio)
  * Preempt current thread using given new one.
  * New thread should NOT be in ANY runqueue.
  */
+void arch_preempt(struct proc *new_proc, int new_prio);
+
 static struct proc *preempt(struct proc *new_proc, int new_prio)
 {
 	assert(new_proc != current);
@@ -268,7 +269,7 @@ static struct proc *preempt(struct proc *new_proc, int new_prio)
 		new_proc->enter_runqueue_ts;
 
 	sched_dbg("dispatching T%d\n", new_proc->pid);
-	percpu_addr(tss)->rsp0 = new_proc->kstack;
+	arch_preempt(new_proc, new_prio);
 	return new_proc;
 }
 
@@ -373,43 +374,13 @@ void schedulify_this_code_path(enum cpu_type t)
 	PS->current_prio = DEFAULT_PRIO;
 }
 
-void init_tss(void)
-{
-	/* Initialize TSS */
-	struct gdt_register gdt = get_gdt();
-	struct system_descriptor *tss_desc = (struct system_descriptor *)gdt_desc_at(gdt.base, KERNEL_TSS);
-	set_tss_descriptor(tss_desc, 0x0, (uint64_t)percpu_addr(tss), 0x67);
-	set_tr(KERNEL_TSS);
-}
-
+extern void arch_init_sched(void);
 void sched_init(void)
 {
-	extern void ticks_handler(void);
-	uint8_t vector;
-
+	arch_init_sched();
 	pcb_validate_offsets();
-
-	/*
-	 * Setup the timer ticks handler
-	 *
-	 * It's likely that the PIT will trigger before we enable
-	 * interrupts, but even if this was the case, the vector
-	 * will get 'latched' in the bootstrap local APIC IRR
-	 * register and get serviced once interrupts are enabled.
-	 */
-	vector = TICKS_IRQ_VECTOR;
-	set_intr_gate(vector, ticks_handler);
-	ioapic_setup_isairq(0, vector, IRQ_BROADCAST);
-
-	/*
-	 * We can program the PIT as one-shot and re-arm it in the
-	 * handler, or let it trigger IRQs monotonically. The arm
-	 * method sounds a bit risky: if a single edge trigger got
-	 * lost, the entire kernel will halt.
-	 */
-	pit_monotonic(1000 / HZ);
 }
-
+REGISTER_STAGE2_INIT(sched_init);
 
 /*
  * @@@ Statistics: @@@

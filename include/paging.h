@@ -15,6 +15,9 @@
 
 #include <kernel.h>
 #include <stdint.h>
+#include <arch/paging.h>
+
+void generic_page_fault(uint32_t err_code);
 
 /*
  * Kernel-space mappings
@@ -67,20 +70,22 @@
 #define KERN_PAGE_END_MAX	0xffffffc000000000ULL
 #define KERN_AREA_MAX_SIZE	(KERN_PAGE_END_MAX - KERN_PAGE_OFFSET)
 #define KERN_PHYS_END_MAX	(KERN_PHYS_OFFSET + KERN_AREA_MAX_SIZE)
-#define VIRTUAL(phys_address)					\
-({								\
-	assert((uintptr_t)(phys_address) >= KERN_PHYS_OFFSET);	\
-	assert((uintptr_t)(phys_address) < KERN_PHYS_END_MAX);	\
-								\
-	(void *)((char *)(phys_address) + KERN_PAGE_OFFSET);	\
+
+#define VIRT(phys_address)										\
+({																\
+       assert((uintptr_t)(phys_address) >= KERN_PHYS_OFFSET);	\
+       assert((uintptr_t)(phys_address) < KERN_PHYS_END_MAX);	\
+       	   	   	   	   	   	   	   	   	   	   	   	   	   	   	\
+       (void *)((char *)(phys_address) + KERN_PAGE_OFFSET);		\
 })
-#define PHYS(virt_address)					\
-({								\
-	assert((uintptr_t)(virt_address) >= KERN_PAGE_OFFSET);	\
-	assert((uintptr_t)(virt_address) < KERN_PAGE_END_MAX);	\
-								\
-	(uintptr_t)((char *)(virt_address) - KERN_PAGE_OFFSET);	\
+#define PHYS(virt_address)										\
+({																\
+       assert((uintptr_t)(virt_address) >= KERN_PAGE_OFFSET);	\
+       assert((uintptr_t)(virt_address) < KERN_PAGE_END_MAX);	\
+       	   	   	   	   	   	   	   	   	   	   	   	   	   	    \
+       (uintptr_t)((char *)(virt_address) - KERN_PAGE_OFFSET);	\
 })
+
 
 /*
  * Page Map Level 4
@@ -207,7 +212,7 @@ struct pml4e {
 
 static inline void *pml3_base(struct pml4e *pml4e)
 {
-	return VIRTUAL((uintptr_t)pml4e->pml3_base << PAGE_SHIFT);
+	return VIRT((uintptr_t)pml4e->pml3_base << PAGE_SHIFT);
 }
 
 /*
@@ -231,7 +236,7 @@ struct pml3e {
 
 static inline void *pml2_base(struct pml3e *pml3e)
 {
-	return VIRTUAL((uintptr_t)pml3e->pml2_base << PAGE_SHIFT);
+	return VIRT((uintptr_t)pml3e->pml2_base << PAGE_SHIFT);
 }
 
 /*
@@ -256,7 +261,7 @@ struct pml2e {
 
 static inline void *pml1_base(struct pml2e *pml2e)
 {
-	return VIRTUAL((uintptr_t)pml2e->pt_base << PAGE_SHIFT);
+	return VIRT((uintptr_t)pml2e->pt_base << PAGE_SHIFT);
 }
 
 struct pml1e {
@@ -287,7 +292,7 @@ struct pml1e {
 
 static inline void *page_base(struct pml1e *pml1e)
 {
-	return VIRTUAL((uintptr_t)pml1e->page_base << PAGE_SHIFT);
+	return VIRT((uintptr_t)pml1e->page_base << PAGE_SHIFT);
 }
 
 /*
@@ -345,7 +350,7 @@ static inline uint64_t get_cr2(void)
 #define KTEXT_PHYS(address)	((address) - KTEXT_PAGE_OFFSET)
 
 #define KERN_PAGE_OFFSET	0xffffff8000000000
-#define VIRTUAL(address)	((address) + KERN_PAGE_OFFSET)
+#define VIRT(address)	((address) + KERN_PAGE_OFFSET)
 
 #endif /* !__ASSEMBLY__ */
 

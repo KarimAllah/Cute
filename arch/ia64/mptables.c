@@ -118,16 +118,16 @@ static struct mpf_struct *get_mpf(void)
 	uintptr_t ebda;
 	struct mpf_struct *mpf;
 
-	ebda = (*(uint16_t *)VIRTUAL(0x40e)) << 4;
-	mpf = search_for_mpf(VIRTUAL(ebda), 0x400);
+	ebda = (*(uint16_t *)VIRT(0x40e)) << 4;
+	mpf = search_for_mpf(VIRT(ebda), 0x400);
 	if (mpf != NULL)
 		return mpf;
 
-	mpf = search_for_mpf(VIRTUAL(639 * 0x400), 0x400);
+	mpf = search_for_mpf(VIRT(639 * 0x400), 0x400);
 	if (mpf != NULL)
 		return mpf;
 
-	mpf = search_for_mpf(VIRTUAL(0xF0000), 0x10000);
+	mpf = search_for_mpf(VIRT(0xF0000), 0x10000);
 	if (mpf != NULL)
 		return mpf;
 
@@ -216,7 +216,7 @@ static void parse_cpu(void *addr)
 			panic("Two `bootstrap' cores in the MP tables! "
 			      "Either the BIOS or our parser is buggy.");
 
-		cpus[0].apic_id = cpu->lapic_id;
+		cpus[0].arch.apic_id = cpu->lapic_id;
 		bsc_entry_filled = 1;
 		return;
 	}
@@ -224,7 +224,7 @@ static void parse_cpu(void *addr)
 	if (nr_cpus >= CPUS_MAX)
 		panic("Only %d logical CPU cores supported\n", nr_cpus);
 
-	cpus[nr_cpus].apic_id = cpu->lapic_id;
+	cpus[nr_cpus].arch.apic_id = cpu->lapic_id;
 
 	++nr_cpus;
 }
@@ -345,7 +345,6 @@ void mptables_init(void)
 
 	/* FIXME: Print MP OEM and Product ID once printk's
 	 * support for non-null-terminated strings is added */
-
 	if (!parse_mpc(mpc)) {
 		mpc_dump(mpc);
 		panic("Can not parse MP conf table");

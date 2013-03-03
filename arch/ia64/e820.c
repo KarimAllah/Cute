@@ -16,9 +16,10 @@
  * manner to the rest of the kernel.
  */
 
-#include <e820.h>
 #include <stdint.h>
 #include <paging.h>
+
+#include "e820.h"
 
 static struct e820_setup memory_setup;
 

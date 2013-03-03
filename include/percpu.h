@@ -86,6 +86,8 @@
 #include <proc.h>
 #include <tests.h>
 
+#include <arch/percpu.h>
+
 #define CPUS_MAX		64	/* Arbitrary */
 
 /*
@@ -118,8 +120,7 @@
  */
 struct percpu {
 	struct proc *__current;		/* Descriptor of the ON_CPU thread */
-	struct tss tss;
-	int apic_id;			/* Local APIC ID */
+	struct arch_percpu arch;
 	uintptr_t self;			/* Address of this per-CPU area */
 	struct percpu_sched sched;
 #if PERCPU_TESTS
@@ -129,13 +130,6 @@ struct percpu {
 	uint8_t x8;			/* An 8-bit value (testing) */
 #endif
 } __aligned(CACHE_LINE_SIZE);
-
-/*
- * To make '__current' available to early boot code, it's statically
- * allocated in the first slot. Thus, slot 0 is reserved for the BSC.
- */
-extern struct percpu cpus[CPUS_MAX];
-#define BOOTSTRAP_PERCPU_AREA	((uintptr_t)&cpus[0])
 
 /*
  * Per-CPU data accessors

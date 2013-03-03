@@ -15,7 +15,7 @@
  * and critical comments on top of e820.h for further details.
  */
 
-#include <e820.h>
+#include "e820.h"
 #include "rmcall.h"
 
 .text

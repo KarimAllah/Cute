@@ -9,7 +9,6 @@
  */
 
 #include <kernel.h>
-#include <segment.h>
 #include <msr.h>
 #include <apic.h>
 #include <vectors.h>

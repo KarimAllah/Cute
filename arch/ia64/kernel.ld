@@ -37,17 +37,17 @@ SECTIONS
 	 */
 
 	.text.head : {
-	      boot/head.o(.text)
-	      boot/rmcall.o(.text)
-	      boot/e820.o(.text)
-	      boot/load_ramdisk.o(.text)
+	      arch/ia64/head.o(.text)
+	      arch/ia64/rmcall.o(.text)
+	      arch/ia64/_e820.o(.text)
+	      arch/ia64/load_ramdisk.o(.text)
 	}
 
 	.data.head : {
-	      boot/head.o(.data)
-	      boot/rmcall.o(.data)
-	      boot/e820.o(.data)
-	      boot/load_ramdisk.o(.data)
+	      arch/ia64/head.o(.data)
+	      arch/ia64/rmcall.o(.data)
+	      arch/ia64/e820.o(.data)
+	      arch/ia64/load_ramdisk.o(.data)
 	}
 
 	/* Putting the bootstrap BSS in the middle will force
@@ -57,10 +57,10 @@ SECTIONS
 	 * cd618e752a which led to 0 executable bytes wasted,
 	 * with the tradeoff price of much extra complexity */
 	.bss.head (NOLOAD) : {
-	      boot/head.o(.bss)
-	      boot/rmcall.o(.bss)
-	      boot/e820.o(.bss)
-	      boot/load_ramdisk.o(.bss)
+	      arch/ia64/head.o(.bss)
+	      arch/ia64/rmcall.o(.bss)
+	      arch/ia64/_e820.o(.bss)
+	      arch/ia64/load_ramdisk.o(.bss)
 	}
 
 	/*
@@ -71,16 +71,16 @@ SECTIONS
 
 	.text : AT(ADDR(.text) - KTEXT_PAGE_OFFSET) {
 	       __text_start = .;
-	       *(EXCLUDE_FILE (*boot/head.o *boot/rmcall.o \
-			       *boot/e820.o *boot/load_ramdisk.o)
+	       *(EXCLUDE_FILE (*arch/ia64/head.o *arch/ia64/rmcall.o \
+			       *arch/ia64/_e820.o *arch/ia64/load_ramdisk.o)
 			       .text)
 	       __text_end = .;
 	}
 
 	.data : {
 	       __data_start = .;
-	       *(EXCLUDE_FILE (*boot/head.o *boot/rmcall.o \
-			       *boot/e820.o *boot/load_ramdisk.o)
+	       *(EXCLUDE_FILE (*arch/ia64/head.o *arch/ia64/rmcall.o \
+			       *arch/ia64/_e820.o *arch/ia64/load_ramdisk.o)
 			       .data)
 	       *(.rodata)
 	       __data_end = .;
@@ -88,13 +88,31 @@ SECTIONS
 
 	.bss : {
 		__bss_start = .;
-	       *(EXCLUDE_FILE (*boot/head.o *boot/rmcall.o \
-			       *boot/e820.o *boot/load_ramdisk.o)
+	       *(EXCLUDE_FILE (*arch/ia64/head.o */rmcall.o \
+			       *arch/ia64/_e820.o *arch/ia64/load_ramdisk.o)
 			       .bss)
-	       *(EXCLUDE_FILE (*boot/head.o *boot/rmcall.o \
-			       *boot/e820.o *boot/load_ramdisk.o)
+	       *(EXCLUDE_FILE (*arch/ia64/head.o *arch/ia64/rmcall.o \
+			       *arch/ia64/_e820.o *arch/ia64/load_ramdisk.o)
 			       COMMON)
 		__bss_end = .;
+	}
+
+	.init.arrays : {
+		__stage1_start = .;
+		*(.init.array.stage1)
+		__stage1_end = .;
+
+		__stage2_start = .;
+		*(.init.array.stage2)
+		__stage2_end = .;
+
+		__stage3_start = .;
+		*(.init.array.stage3)
+		__stage3_end = .;
+
+		__stage4_start = .;
+		*(.init.array.stage4)
+		__stage4_end = .;
 	}
 
 	__kernel_end = .;

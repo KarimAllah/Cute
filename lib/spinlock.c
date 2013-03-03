@@ -93,10 +93,10 @@ void spin_lock(struct lock_spin *lock)
 	union x86_rflags rflags;
 
 	/* Reentrancy-safe place: stack or a register */
-	rflags = local_irq_disable_save();
+	rflags.raw = local_irq_disable_save();
 
 	while (atomic_bit_test_and_set(&lock->val) == _SPIN_LOCKED) {
-		local_irq_restore(rflags);
+		local_irq_restore(rflags.raw);
 
 		while (lock->val == _SPIN_LOCKED)
 			cpu_pause();
@@ -123,10 +123,10 @@ bool spin_trylock(struct lock_spin *lock)
 {
 	union x86_rflags rflags;
 
-	rflags = local_irq_disable_save();
+	rflags.raw = local_irq_disable_save();
 
 	if (atomic_bit_test_and_set(&lock->val) == _SPIN_LOCKED) {
-		local_irq_restore(rflags);
+		local_irq_restore(rflags.raw);
 		return false;
 	}
 
@@ -146,7 +146,7 @@ void spin_unlock(struct lock_spin *lock)
 	barrier();
 	lock->val = _SPIN_UNLOCKED;
 
-	local_irq_restore(rflags);
+	local_irq_restore(rflags.raw);
 }
 
 /*

@@ -28,7 +28,8 @@
  *		   -- Pushed by US --
  */
 
-#include <idt.h>
+#include "idt.h"
+
 #include <paging.h>
 #include <apic.h>
 #include <proc.h>
@@ -147,7 +148,7 @@ page_fault:
 	pushq	%r14
 	pushq	%r15
 
-	call	__page_fault
+	call	do_page_fault
 
 	popq	%r15
 	popq	%r14
@@ -226,7 +227,7 @@ PIC_handler:
  * NOTE-4! Don't clobber any reg not saved at PUSH_REGS
  */
 irq_end:
-	movq   $(VIRTUAL(APIC_PHBASE) + APIC_EOI), %rax
+	movq   $(VIRT(APIC_PHBASE) + APIC_EOI), %rax
 	movl   $0,(%rax)
 	RESTORE_REGS
 	iretq
@@ -285,6 +286,7 @@ ticks_handler:
 
 	/* Pick the new process to run */
 	call   sched_tick
+
 	cmpq   current, %rax
 	je     2f
 
@@ -355,8 +357,8 @@ halt_cpu_ipi_handler:
 	jmp   1b
 
 /* Syscalls */
-.globl syscall
-syscall:
+.globl arch_syscall
+arch_syscall:
 	/* Apparently changing the CPL using syscall
 	 * doesn't automatically change the stack
 	 * register to use the kernel stack stored in TSS
@@ -370,7 +372,7 @@ syscall:
 
 	movq	%rbx,%rsi
 	movq	%rax,%rdi
-	callq	__syscall
+	callq	do_generic_syscall
 
 	popq	%r11 //%rflags
 	popq	%rcx
@@ -412,7 +414,7 @@ apic_timer_handler:
 .globl idtdesc
 idtdesc:
 	.word  idt_end - idt - 1	# limit
-	.quad  VIRTUAL(KTEXT_PHYS(idt))	# base
+	.quad  VIRT(KTEXT_PHYS(idt))	# base
 
 .bss
 

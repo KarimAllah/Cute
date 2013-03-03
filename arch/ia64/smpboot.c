@@ -9,18 +9,19 @@
  */
 
 #include <kernel.h>
-#include <smpboot.h>
 #include <paging.h>
 #include <string.h>
 #include <syscall.h>
 #include <apic.h>
-#include <idt.h>
 #include <pit.h>
 #include <mptables.h>
 #include <proc.h>
 #include <percpu.h>
 #include <kmalloc.h>
 #include <sched.h>
+#include <idt.h>
+
+#include "smpboot.h"
 
 /*
  * Assembly trampoline code start and end pointers
@@ -135,7 +136,7 @@ static int start_secondary_cpu(struct percpu *cpu, struct smpboot_params *params
 
 	barrier();
 	count = nr_alive_cpus;
-	apic_id = cpu->apic_id;
+	apic_id = cpu->arch.apic_id;
 
 	/*
 	 * Personally allocate a 'current' thread descriptor and a stack
@@ -207,6 +208,7 @@ fail:
 /*
  * @cpu: iterator of type ‘struct percpu *’.
  */
+extern struct percpu cpus[CPUS_MAX];
 #define for_all_cpus(cpu)			\
 	for (cpu = &cpus[0]; cpu != &cpus[mptables_get_nr_cpus()]; cpu++)
 #define for_all_cpus_except_bootstrap(cpu)	\
@@ -230,10 +232,9 @@ void __no_return secondary_start(void)
 
 	/* Assert validity of our per-CPU area */
 	id.raw = apic_read(APIC_ID);
-	assert(id.id == percpu_get(apic_id));
+	assert(id.id == percpu_addr(arch)->apic_id);
 
-	init_tss();
-	init_syscall();
+	syscall_init();
 
 	printk("SMP: CPU apic_id=%d started\n", id.id);
 

@@ -11,6 +11,7 @@
  *  the Free Software Foundation, version 2.
  */
 
+#include <arch/vm.h>
 #include <tests.h>
 #include <proc.h>
 

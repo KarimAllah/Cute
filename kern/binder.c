@@ -3,6 +3,7 @@
 #include <binder.h>
 #include <kmalloc.h>
 #include <spinlock.h>
+#include <init_array.h>
 
 /*
  *
@@ -175,3 +176,5 @@ int binder_init()
 	list_init(&binder_objects);
 	return 0;
 }
+
+REGISTER_STAGE1_INIT(binder_init);

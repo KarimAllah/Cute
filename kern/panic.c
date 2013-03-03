@@ -74,7 +74,7 @@ void __no_return panic(const char *fmt, ...)
 	va_end(args);
 
 	buf[n] = 0;
-	printk("\nCPU#%d-PANIC: %s", percpu_get(apic_id), buf);
+	printk("\nCPU#%d-PANIC: %s", percpu_addr(arch)->apic_id, buf);
 
 	/* Since the  other cores are stopped only after they re-
 	 * accept interrupts, they may print on-screen and scroll

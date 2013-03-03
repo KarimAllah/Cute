@@ -16,13 +16,13 @@
  * nting that zone (beside kernel text addresses) were mapped by head.S
  */
 
+#include <mm.h>
+#include <vm.h>
 #include <kernel.h>
 #include <paging.h>
 #include <percpu.h>
-#include <mm.h>
-#include <e820.h>
-#include <vm.h>
 #include <tests.h>
+#include <memory.h>
 
 
 
@@ -44,13 +44,7 @@ static void map_pml1_range(struct pml1e *pml1_base, uintptr_t vstart,
 	for (pml1e = pml1_base + pml1_index(vstart);
 		pml1e <= pml1_base + pml1_index(vend - 1);
 		pml1e++) {
-		pml1e->present = 1;
-		pml1e->read_write = 1;
-		if(kernel)
-			pml1e->user_supervisor = 0;
-		else
-			pml1e->user_supervisor = 1;
-		pml1e->page_base = (uintptr_t)pstart >> PAGE_SHIFT;
+		SET_PML1E(pml1e, kernel ? 0 : 1, 1, 1, PHYS2MACH_ADDR(pstart) >> PAGE_SHIFT);
 
 		pstart += PML1_ENTRY_MAPPING_SIZE;
 		vstart += PML1_ENTRY_MAPPING_SIZE;
@@ -83,17 +77,12 @@ static void map_pml2_range(struct pml2e *pml2_base, uintptr_t vstart,
 	     pml2e++) {
 
 		if (!pml2e->present) {
-			pml2e->present = 1;
-			pml2e->read_write = 1;
-			if(kernel)
-				pml2e->user_supervisor = 0;
-			else
-				pml2e->user_supervisor = 1;
 			page = get_zeroed_page(ZONE_1GB);
-			pml2e->pt_base = page_phys_addr(page) >> PAGE_SHIFT;
+			SET_PML2E(pml2e, kernel ? 0 : 1, 1, 1, PHYS2MACH_ADDR(page_phys_addr(page)) >> PAGE_SHIFT)
+			PIN_AS_L1_TABLE(page);
 		}
 
-		pml1_base = VIRTUAL((uintptr_t)pml2e->pt_base << PAGE_SHIFT);
+		pml1_base = VIRT((uintptr_t)pml2e->pt_base << PAGE_SHIFT);
 
 		if (pml2e == pml2_base + pml2_index(vend - 1)) /* Last entry */
 			end = vend;
@@ -133,17 +122,12 @@ static void map_pml3_range(struct pml3e *pml3_base, uintptr_t vstart,
 	     pml3e++) {
 		assert((char *)pml3e < (char *)pml3_base + PAGE_SIZE);
 		if (!pml3e->present) {
-			pml3e->present = 1;
-			pml3e->read_write = 1;
-			if(kernel)
-				pml3e->user_supervisor = 0;
-			else
-				pml3e->user_supervisor = 1;
 			page = get_zeroed_page(ZONE_1GB);
-			pml3e->pml2_base = page_phys_addr(page) >> PAGE_SHIFT;
+			SET_PML3E(pml3e, kernel ? 0 : 1, 1, 1, PHYS2MACH_ADDR(page_phys_addr(page)) >> PAGE_SHIFT)
+			PIN_AS_L2_TABLE(page);
 		}
 
-		pml2_base = VIRTUAL((uintptr_t)pml3e->pml2_base << PAGE_SHIFT);
+		pml2_base = VIRT((uintptr_t)pml3e->pml2_base << PAGE_SHIFT);
 
 		if (pml3e == pml3_base + pml3_index(vend - 1)) /* Last entry */
 			end = vend;
@@ -183,18 +167,12 @@ static void map_pml4_range(struct pml4e *pml4_base, uintptr_t vstart,
 	     pml4e++) {
 		assert((char *)pml4e < (char *)pml4_base + PAGE_SIZE);
 		if (!pml4e->present) {
-			if (kernel) {
-				pml4e->user_supervisor = 0;
-			} else {
-				pml4e->user_supervisor = 1;
-			}
-			pml4e->present = 1;
-			pml4e->read_write = 1;
 			page = get_zeroed_page(ZONE_1GB);
-			pml4e->pml3_base = page_phys_addr(page) >> PAGE_SHIFT;
+			SET_PML4E(pml4e, kernel ? 0 : 1, 1, 1, PHYS2MACH_ADDR(page_phys_addr(page)) >> PAGE_SHIFT)
+			PIN_AS_L3_TABLE(page);
 		}
 
-		pml3_base = VIRTUAL((uintptr_t)pml4e->pml3_base << PAGE_SHIFT);
+		pml3_base = VIRT(MACH2PHYS_ADDR((uintptr_t)pml4e->pml3_base) << PAGE_SHIFT);
 
 		if (pml4e == pml4_base + pml4_index(vend - 1)) /* Last entry */
 			end = vend;
@@ -224,13 +202,13 @@ static void map_range_common(struct pml4e *pml4, uintptr_t vstart, uint64_t vlen
  */
 void map_range_kernel(uintptr_t vstart, uint64_t vlen, uintptr_t pstart)
 {
-	struct pml4e *pml4 = (struct pml4e *)VIRTUAL(current->cr3);
+	struct pml4e *pml4 = (struct pml4e *)VIRT(current->cr3);
 	map_range_common(pml4, vstart, vlen, pstart, true);
 }
 
 void map_range_user(struct proc *proc, uintptr_t vstart, uint64_t vlen, uintptr_t pstart)
 {
-	struct pml4e *pml4 = (struct pml4e *)VIRTUAL(proc->cr3);
+	struct pml4e *pml4 = (struct pml4e *)VIRT(proc->cr3);
 	map_range_common(pml4, vstart, vlen, pstart, false);
 }
 
@@ -278,8 +256,8 @@ static void copy_pml2_range(struct pml2e *dst_pml2_base, struct pml2e *src_pml2_
 		page = get_zeroed_page(ZONE_1GB);
 		dst_pml2e->pt_base = page_phys_addr(page) >> PAGE_SHIFT;
 
-		src_pml1_base = VIRTUAL((uintptr_t)src_pml2e->pt_base << PAGE_SHIFT);
-		dst_pml1_base = VIRTUAL((uintptr_t)src_pml2e->pt_base << PAGE_SHIFT);
+		src_pml1_base = VIRT((uintptr_t)src_pml2e->pt_base << PAGE_SHIFT);
+		dst_pml1_base = VIRT((uintptr_t)src_pml2e->pt_base << PAGE_SHIFT);
 
 		if (src_pml2e == src_pml2_base + pml1_index(vend - 1)) /* Last entry */
 			end = vend;
@@ -319,8 +297,8 @@ static void copy_pml3_range(struct pml3e *dst_pml3_base, struct pml3e *src_pml3_
 		page = get_zeroed_page(ZONE_1GB);
 		dst_pml3e->pml2_base = page_phys_addr(page) >> PAGE_SHIFT;
 
-		src_pml2_base = VIRTUAL((uintptr_t)src_pml3e->pml2_base << PAGE_SHIFT);
-		dst_pml2_base = VIRTUAL((uintptr_t)dst_pml3e->pml2_base << PAGE_SHIFT);
+		src_pml2_base = VIRT((uintptr_t)src_pml3e->pml2_base << PAGE_SHIFT);
+		dst_pml2_base = VIRT((uintptr_t)dst_pml3e->pml2_base << PAGE_SHIFT);
 
 		if (src_pml3e == src_pml3_base + pml3_index(vend - 1)) /* Last entry */
 			end = vend;
@@ -360,8 +338,8 @@ static void copy_pml4_range(struct pml4e *dst_pml4_base, struct pml4e *src_pml4_
 		page = get_zeroed_page(ZONE_1GB);
 		dst_pml4e->pml3_base = page_phys_addr(page) >> PAGE_SHIFT;
 
-		src_pml3_base = VIRTUAL((uintptr_t)src_pml4e->pml3_base << PAGE_SHIFT);
-		dst_pml3_base = VIRTUAL((uintptr_t)dst_pml4e->pml3_base << PAGE_SHIFT);
+		src_pml3_base = VIRT((uintptr_t)src_pml4e->pml3_base << PAGE_SHIFT);
+		dst_pml3_base = VIRT((uintptr_t)dst_pml4e->pml3_base << PAGE_SHIFT);
 
 		if (src_pml4e == src_pml4_base + pml4_index(vend - 1)) /* Last entry */
 			end = vend;
@@ -378,8 +356,8 @@ void copy_address_space(struct proc *dst_proc, struct proc *src_proc)
 {
 	uintptr_t vstart = 0x0;
 	uint64_t vlen = PAGE_SIZE * 1024;
-	struct pml4e *src_pml4 = (struct pml4e *)VIRTUAL(src_proc->cr3);
-	struct pml4e *dst_pml4 = (struct pml4e *)VIRTUAL(dst_proc->cr3);
+	struct pml4e *src_pml4 = (struct pml4e *)VIRT(src_proc->cr3);
+	struct pml4e *dst_pml4 = (struct pml4e *)VIRT(dst_proc->cr3);
 	copy_pml4_range(dst_pml4, src_pml4, vstart, vstart + vlen);
 }
 
@@ -388,14 +366,14 @@ void copy_address_space(struct proc *dst_proc, struct proc *src_proc)
  * kernel page tables. If so, also assure that given address
  * is mapped to the expected physical address.
  */
-static bool vaddr_is_mapped(void *vaddr)
+bool vaddr_is_mapped(void *vaddr)
 {
 	struct pml4e *pml4e;
 	struct pml3e *pml3e;
 	struct pml2e *pml2e;
 	struct pml1e *pml1e;
 
-	pml4e = ((struct pml4e *)VIRTUAL(current->cr3)) + pml4_index(vaddr);
+	pml4e = ((struct pml4e *)VIRT(current->cr3)) + pml4_index(vaddr);
 	if (!pml4e->present)
 		return false;
 
@@ -437,12 +415,12 @@ void *vm_kmap(uintptr_t pstart, uint64_t len)
 		      ">= max supported physical addresses end 0x%lx",
 		      pstart, pend, KERN_PHYS_END_MAX);
 
-	ret = VIRTUAL(pstart);
+	ret = VIRT(pstart);
 	pstart = round_down(pstart, PAGE_SIZE_2MB);
 	pend = round_up(pend, PAGE_SIZE_2MB);
 
 	while (pstart < pend) {
-		vstart = VIRTUAL(pstart);
+		vstart = VIRT(pstart);
 		if (!vaddr_is_mapped(vstart))
 			map_range_kernel((uintptr_t)vstart,
 					 PAGE_SIZE_2MB, pstart);
@@ -465,7 +443,7 @@ void vm_init(void)
 	map_range_kernel(KTEXT_PAGE_OFFSET, KTEXT_AREA_SIZE, KTEXT_PHYS_OFFSET);
 
 	/* Map the entire available physical space */
-	phys_end = e820_get_phys_addr_end();
+	phys_end = get_phys_addr_end();
 	phys_end = round_up(phys_end, PAGE_SIZE_2MB);
 	map_range_kernel(KERN_PAGE_OFFSET, phys_end, KERN_PHYS_OFFSET);
 	printk("Memory: Mapping range 0x%lx -> 0x%lx to physical 0x0\n",
@@ -524,7 +502,7 @@ static void vm_check_kmap1(void)
 
 	while (count--) {
 		vaddr = vm_kmap(paddr, 1);
-		assert(vaddr == VIRTUAL(paddr));
+		assert(vaddr == VIRT(paddr));
 
 		if (!vaddr_is_mapped(vaddr))
 			panic("_VM: Reporting supposedly mapped address 0x%lx "
@@ -556,10 +534,10 @@ static void vm_check_kmap2(void)
 		/* To let the test be effective, assure we're
 		 * mapping previously unmapped address */
 		assert(!vaddr_is_mapped((void *)round_up((uintptr_t)
-		       VIRTUAL(paddr), PAGE_SIZE_2MB)));
+		       VIRT(paddr), PAGE_SIZE_2MB)));
 
 		vaddr = vm_kmap(paddr, len);
-		assert(vaddr == VIRTUAL(paddr));
+		assert(vaddr == VIRT(paddr));
 
 		for (int i = 0; i < len; i++) {
 			if (!vaddr_is_mapped(vaddr))

@@ -20,6 +20,7 @@
 #include <string.h>
 #include <kmalloc.h>
 #include <bitmap.h>
+#include <init_array.h>
 
 /*
  * In-memory Super Block
@@ -982,3 +983,5 @@ void ext2_init(void)
 	printk("Ext2: Passed all sanity checks!\n");
 	printk("EXT2: File system label is `%s'\n", sb->volume_label);
 }
+
+REGISTER_STAGE1_INIT(ext2_init);

@@ -1,11 +1,11 @@
 #include <mm.h>
 #include <msr.h>
 #include <sched.h>
+#include <percpu.h>
 #include <binder.h>
 #include <kernel.h>
-#include <segment.h>
 #include <syscall.h>
-#include <percpu.h>
+#include <init_array.h>
 #include <uapi/cute/vmmap.h>
 
 static int thread_syscall(void *data)
@@ -94,7 +94,7 @@ static syscall_handler syscalls[SYSCALL_NR] = {
 		(syscall_handler)null_syscall
 };
 
-int __syscall(int cmd, void *data)
+int do_generic_syscall(int cmd, void *data)
 {
 	printk("Syscall cmd : %x\n", cmd);
 	if(cmd < SYSCALL_NR - 1)
@@ -110,8 +110,10 @@ int __syscall(int cmd, void *data)
 	}
 }
 
-void init_syscall(void)
+void arch_syscall_init(void);
+void syscall_init(void)
 {
-	write_msr(STAR, (((uint64_t)KERNEL_CS | KERNEL_RPL) << 32) | (((uint64_t)LEGACY_CS | USER_RPL)<< 48));
-	write_msr(LSTAR, (uint64_t)syscall);
+	arch_syscall_init();
 }
+
+REGISTER_STAGE1_INIT(syscall_init);

@@ -6,6 +6,10 @@
 CC	= gcc
 CPP	= cpp
 LD	= ld
+RM = rm
+LN = ln
+CD = cd
+GZIP = gzip
 OBJCOPY = objcopy
 
 EMULATOR = /home/karim/sources/qemu/qemu/build/x86_64-softmmu/qemu-system-x86_64
@@ -103,7 +107,6 @@ CWARN_FLAGS =				\
   -Wparentheses				\
   -Wtrigraphs				\
   -Wunused				\
-  -Wstrict-aliasing=2			\
   -Wundef				\
   -Wpointer-arith			\
   -Wcast-qual				\
@@ -121,10 +124,15 @@ CWARN_FLAGS =				\
   -Wno-type-limits			\
   -Wno-missing-field-initializers
 
+ifeq ($(ARCH),ia64)
+CARCH_FLAGS	= -D__ARCH_IA64__
+endif
+
 CFLAGS =				\
   $(CMACH_FLAGS)			\
   $(CDIALECT_FLAGS)			\
   $(COPT_FLAGS)				\
+  $(CARCH_FLAGS)			\
   $(CWARN_FLAGS)
 
 # Share headers between assembly, C, and LD files
@@ -137,7 +145,7 @@ LDFLAGS = --warn-common
 
 # Our global kernel linker script, after being
 # 'cpp' pre-processed from the *.ld source
-PROCESSED_LD_SCRIPT = kern/kernel.ldp
+PROCESSED_LD_SCRIPT = arch/$(ARCH)/kernel.ldp
 
 # GCC-generated C code header files dependencies
 # Check '-MM' and '-MT' at gcc(1)
@@ -152,24 +160,39 @@ CGCC	= cgcc
 #
 
 # Core and Secondary CPUs bootstrap
-DEPS_DIRS		+= $(DEPS_ROOT_DIR)/boot
-BOOT_OBJS =		\
-  boot/head.o		\
-  boot/trampoline.o	\
-  boot/rmcall.o		\
-  boot/e820.o		\
-  boot/load_ramdisk.o
+ifeq ($(ARCH),ia64)
+DEPS_DIRS		+= $(DEPS_ROOT_DIR)/arch/ia64
+ARCH_OBJS =		\
+  arch/ia64/head.o		\
+  arch/ia64/trampoline.o	\
+  arch/ia64/rmcall.o		\
+  arch/ia64/e820.o		\
+  arch/ia64/_e820.o		\
+  arch/ia64/mptables.o	\
+  arch/ia64/sched.o		\
+  arch/ia64/load_ramdisk.o \
+  arch/ia64/init.o \
+  arch/ia64/memory.o \
+  arch/ia64/smpboot.o \
+  arch/ia64/idt.o \
+  arch/ia64/_idt.o \
+  arch/ia64/percpu.o \
+  arch/ia64/syscall.o \
+  arch/ia64/thread.o
+endif
 
 # Memory management
 DEPS_DIRS		+= $(DEPS_ROOT_DIR)/mm
 MM_OBJS =		\
-  mm/e820.o		\
+  mm/memory.o	\
   mm/page_alloc.o	\
   mm/vm_map.o		\
   mm/kmalloc.o
+  
 
 # Devices
 DEPS_DIRS		+= $(DEPS_ROOT_DIR)/dev
+ifeq ($(ARCH),ia64)
 DEV_OBJS =		\
   dev/serial.o		\
   dev/pic.o		\
@@ -178,6 +201,7 @@ DEV_OBJS =		\
   dev/pit.o		\
   dev/keyboard.o \
   dev/vga.o
+endif
 
 # Ext2 file system
 DEPS_DIRS		+= $(DEPS_ROOT_DIR)/ext2
@@ -203,14 +227,11 @@ LIB_OBJS =		\
 # All other kernel objects
 DEPS_DIRS		+= $(DEPS_ROOT_DIR)/kern
 KERN_OBJS =		\
-  $(BOOT_OBJS)		\
+  $(ARCH_OBJS)		\
   $(MM_OBJS)		\
   $(DEV_OBJS)		\
   $(EXT2_OBJS)		\
   $(LIB_OBJS)		\
-  kern/idt.o		\
-  kern/mptables.o	\
-  kern/smpboot.o	\
   kern/sched.o		\
   kern/syscall.o	\
   kern/kthread.o	\
@@ -221,14 +242,15 @@ KERN_OBJS =		\
   kern/paging.o		\
   kern/wait.o		\
   kern/proc.o		\
+  kern/init_array.o	\
   kern/main.o
 
 BOOTSECT_OBJS =		\
-  boot/bootsect.o
+  arch/ia64/bootsect.o
 
 BUILD_OBJS    =		$(BOOTSECT_OBJS) $(KERN_OBJS)
 BUILD_DIRS    =		$(DEPS_DIRS)
-
+	
 # Control output verbosity
 # `@': suppresses echoing of subsequent command
 VERBOSE=0
@@ -323,8 +345,8 @@ $(RAMDISK_BIN): user
 # Build kernel + bootsector ELF and binaries
 #
 
-BOOTSECT_ELF   = boot/bootsect.elf
-BOOTSECT_BIN   = boot/bootsect.bin
+BOOTSECT_ELF   = arch/ia64/bootsect.elf
+BOOTSECT_BIN   = arch/ia64/bootsect.bin
 KERNEL_ELF     = kern/kernel.elf
 KERNEL_BIN     = kern/kernel.bin
 
@@ -338,7 +360,11 @@ $(BOOTSECT_ELF): $(BOOTSECT_OBJS)
 	$(E) "  LD       " $@
 	$(Q) $(LD) $(LDFLAGS) -Ttext 0x0  $< -o $@
 
-$(KERNEL_ELF): $(KERN_OBJS) $(PROCESSED_LD_SCRIPT)
+include_dir:
+	$(Q) $(RM) -rf include/arch
+	$(Q) $(CD) include;$(LN) -s ../arch/$(ARCH)/include arch
+
+$(KERNEL_ELF): include_dir $(BUILD_DIRS) $(KERN_OBJS) $(PROCESSED_LD_SCRIPT)
 	$(E) "  LD       " $@
 	$(Q) $(LD) $(LDFLAGS) -T $(PROCESSED_LD_SCRIPT) $(KERN_OBJS) -o $@
 
@@ -366,14 +392,17 @@ clean:
 	$(E) "  CLEAN"
 	$(Q) rm -fr $(BUILD_DIRS)
 	$(Q) rm -f  $(BUILD_OBJS)
+	$(Q) rm -f  $(ARCH_OBJS)
 	$(Q) rm -f  $(PROCESSED_LD_SCRIPT)
 	$(Q) rm -f  $(BOOTSECT_ELF) $(BOOTSECT_BIN)
 	$(Q) rm -f  $(KERNEL_ELF) $(KERNEL_BIN)
 	$(Q) rm -f  $(BOOT_BIN) $(FINAL_HD_IMAGE)
-	$(Q) rm -f user/dummy_proc.o user/dummy_proc user/looper.o user/looper user/vga_worker.o user/vga_worker user/algorithms.o user/algorithms
-	$(Q) rm -f user/libc/libc.o user/libc/binder.o user/libc/malloc.o user/libc/exit.o user/libc/ds/trees.o user/libc/ds/lists.o
-	$(Q) rm -f build/ramdisk
+	$(Q) $(RM) -fr include/arch
+	$(Q) rm -f	user/dummy_proc.o user/dummy_proc user/looper.o user/looper user/vga_worker.o user/vga_worker user/algorithms.o user/algorithms
+	$(Q) rm -f	user/libc/libc.o user/libc/binder.o user/libc/malloc.o user/libc/exit.o user/libc/ds/trees.o user/libc/ds/lists.o
+	$(Q) rm -f	build/ramdisk
 	$(Q) rm -fr build
+	$(Q) rm -f	cute.gz cute
 
 run: final user $(RAMDISK_BIN)
 	$(Q) $(EMULATOR) $(EMULATOR_OPTIONS) $(FINAL_HD_IMAGE)

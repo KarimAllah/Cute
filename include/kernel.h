@@ -211,6 +211,7 @@ void __unused __undefined_method(void);
 	(int32_t)__arr_size(arr);				\
 })
 
+void clear_bss(void);
 void __no_return kernel_start(void);
 
 #endif /* _KERNEL_H */

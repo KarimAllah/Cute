@@ -64,9 +64,9 @@
 #include <sections.h>
 #include <spinlock.h>
 #include <ramdisk.h>
-#include <e820.h>
 #include <mm.h>
 #include <tests.h>
+#include <page_alloc.h>
 
 /*
  * Page Frame Descriptor Table
@@ -83,23 +83,6 @@ static struct page *pfdtable_top;
 static struct page *pfdtable_end;
 
 /*
- * Page allocator Zone Descriptor
- */
-struct zone {
-	/* Statically initialized */
-	enum zone_id id;		/* Self reference (for iterators) */
-	uint64_t start;			/* Physical range start address */
-	uint64_t end;			/* Physical range end address */
-	const char *description;	/* For kernel log messages */
-
-	/* Dynamically initialized */
-	struct page *freelist;		/* Connect zone's unallocated pages */
-	spinlock_t freelist_lock;	/* Above list protection */
-	uint64_t freepages_count;	/* Stats: # of free pages now */
-	uint64_t boot_freepages;	/* Stats: # of free pages at boot */
-};
-
-/*
  * Zone Descriptor Table
  *
  * If a physical page got covered by more than one zone
@@ -110,7 +93,7 @@ struct zone {
  * _only_ one, zone. Each page descriptor will then have an
  * assigned zone ID for its entire lifetime.
  */
-static struct zone zones[] = {
+struct zone zones[] = {
 	[ZONE_1GB] = {
 		.id = ZONE_1GB,
 		.start = 0x100000,	/* 1-MByte */
@@ -126,19 +109,6 @@ static struct zone zones[] = {
 	},
 };
 
-/*
- * Do not reference the zones[] table directly
- *
- * Use below iterators in desired priority order, or check
- * get_zone(), which does the necessery ID sanity checks.
- */
-
-#define descending_prio_for_each(zone)					\
-	for (zone = &zones[0]; zone <= &zones[ZONE_ANY]; zone++)
-
-#define ascending_prio_for_each(zone)					\
-	for (zone = &zones[ZONE_ANY]; zone >= &zones[0]; zone--)
-
 static inline struct zone *get_zone(enum zone_id zid)
 {
 	if (zid != ZONE_1GB && zid != ZONE_ANY)
@@ -147,7 +117,7 @@ static inline struct zone *get_zone(enum zone_id zid)
 	return &zones[zid];
 }
 
-static inline void zones_init(void)
+void zones_init(void)
 {
 	struct zone *zone;
 
@@ -160,22 +130,6 @@ static inline void zones_init(void)
 }
 
 /*
- * Reverse Mapping Descriptor
- *
- * This structure aids in reverse-mapping a virtual address
- * to its respective page descriptor.
- *
- * We store page descriptors representing a specific e820-
- * available range sequentially, thus a reference to a range
- * and the pfdtable cell representing its first page is
- * enough for reverse-mapping any address in such a range.
- */
-struct rmap {
-	struct e820_range range;
-	struct page *pfd_start;
-};
-
-/*
  * @pfdrmap: The global table used to reverse-map an address
  * @pfdrmap_top, @pfdrmap_end: similar to @pfdtable above
  */
@@ -183,7 +137,7 @@ static struct rmap *pfdrmap;
 static struct rmap *pfdrmap_top;
 static struct rmap *pfdrmap_end;
 
-static void rmap_add_range(struct e820_range *, struct page *);
+static void rmap_add_range(uint64_t base, uint64_t len, struct page *);
 
 /*
  * Watermak the end of our kernel memory area which is above
@@ -192,7 +146,7 @@ static void rmap_add_range(struct e820_range *, struct page *);
  * By this action, we've permanently allocated space for
  * these tables for the entire system's lifetime.
  */
-static uint64_t kmem_end = -1;
+uint64_t kmem_end = -1;
 
 /*
  * Assign a zone to given page
@@ -235,16 +189,14 @@ static struct zone *page_assign_zone(struct page* page)
  *
  * Prerequisite: kernel memory area end pre-calculated
  */
-static void pfdtable_add_range(struct e820_range *range)
+void pfdtable_add_range(uint64_t base, uint64_t len, uint32_t type)
 {
 	uint64_t start, end, nr_pages;
 	struct zone *zone;
 	struct page *page;
 
-	assert(range->type == E820_AVAIL);
-
-	start = range->base;
-	end = range->base + range->len;
+	start = base;
+	end = base + len;
 	assert(page_aligned(start));
 	assert(page_aligned(end));
 	assert(page_aligned(kmem_end));
@@ -256,7 +208,7 @@ static void pfdtable_add_range(struct e820_range *range)
 	nr_pages = (end - start) / PAGE_SIZE;
 	assert((page + nr_pages) <= pfdtable_end);
 
-	rmap_add_range(range, page);
+	rmap_add_range(base, len, page);
 
 	while (start != end) {
 		page_init(page, start);
@@ -274,11 +226,11 @@ static void pfdtable_add_range(struct e820_range *range)
 }
 
 /*
- * Add a reverse-mapping entry for given e820 range.
+ * Add a reverse-mapping entry for given range.
  * @start: first pfdtable cell represenging @range.
  * NOTE! no locks; access this only from init paths.
  */
-static void rmap_add_range(struct e820_range *range,
+static void rmap_add_range(uint64_t base, uint64_t len,
 			   struct page *start)
 {
 	struct rmap *rmap;
@@ -286,7 +238,8 @@ static void rmap_add_range(struct e820_range *range,
 	rmap = pfdrmap_top;
 
 	assert(rmap + 1 <= pfdrmap_end);
-	rmap->range = *range;
+	rmap->base = base;
+	rmap->len = len;
 	rmap->pfd_start = start;
 
 	pfdrmap_top = rmap + 1;
@@ -307,16 +260,21 @@ static struct page *__get_free_page(enum zone_id zid)
 
 	spin_lock(&zone->freelist_lock);
 
-	if (!zone->freelist) {
+	page = zone->freelist;
+
+	// Lazily skip non-free(reserved) pages.
+	while(page && !page->free)
+		page = page->next;
+
+	if (!page) {
+		zone->freelist = NULL;
 		page = NULL;
 		goto out;
 	}
 
-	page = zone->freelist;
-	zone->freelist = zone->freelist->next;
+	zone->freelist = page->next;
 	zone->freepages_count--;
 
-	assert(page->free == 1);
 	page->free = 0;
 
 out:
@@ -385,7 +343,7 @@ void free_page(struct page *page)
 /*
  * Reverse mapping, in O(n)
  *
- * 'N' is the # of 'available' e820 ranges.
+ * 'N' is the # of 'available' memory ranges.
  */
 
 /*
@@ -395,15 +353,13 @@ struct page *addr_to_page(void *addr)
 {
 	struct rmap *rmap;
 	struct page *page;
-	struct e820_range *range;
 	uint64_t paddr, start, end, offset;
 
 	paddr = PHYS(addr);
 	paddr = round_down(paddr, PAGE_SIZE);
 	for (rmap = pfdrmap; rmap != pfdrmap_top; rmap++) {
-		range = &(rmap->range);
-		start = range->base;
-		end = start + range->len;
+		start = rmap->base;
+		end = start + rmap->len;
 
 		if (paddr < start)
 			continue;
@@ -421,44 +377,34 @@ struct page *addr_to_page(void *addr)
 	      "address", addr);
 }
 
+/* NOT THREAD SAFE! Use it only on early init */
+void reserve_physical_range(void *paddr, uint64_t num_pages)
+{
+	uint64_t vaddr = (uint64_t)VIRT(paddr);
+	uint64_t vend = vaddr + (num_pages * PAGE_SIZE);
+	struct page *page;
+
+	for(;vaddr < vend;vaddr+= PAGE_SIZE)
+	{
+		page = addr_to_page(vaddr);
+		page->free = 0;
+	}
+}
+
 /*
  * Initialize the page allocator structures
  */
-void pagealloc_init(void)
+void pagealloc_init(uint64_t avail_ranges, uint64_t avail_pages)
 {
-	struct e820_range *range;
-	struct e820_setup *setup;
-	struct zone *zone;
-	uint64_t avail_pages, avail_ranges;
-
-	zones_init();
-
-	/*
-	 * While building the page descriptors in the pfdtable,
-	 * we want to be sure not to include pages that override
-	 * our own pfdtable area. i.e. we want to know the
-	 * pfdtable area length _before_ forming its entries.
-	 *
-	 * Since the pfdtable length depends on available phys
-	 * memory, we move over the e820 map in two passes.
-	 *
-	 * First pass: estimate pfdtable area length by counting
-	 * provided e820-availale pages and ranges.
-	 */
-
-	setup = e820_get_memory_setup();
-	avail_pages = setup->avail_pages;
-	avail_ranges = setup->avail_ranges;
-
 	printk("Memory: Available physical memory = %d MB\n",
-	       ((avail_pages * PAGE_SIZE) / 1024) / 1024);
+			((avail_pages * PAGE_SIZE) / 1024) / 1024);
 
 	pfdtable = ramdisk_memory_area_end();
 	pfdtable_top = pfdtable;
 	pfdtable_end = pfdtable + avail_pages;
 
 	printk("Memory: Page Frame descriptor table size = %d KB\n",
-	       (avail_pages * sizeof(pfdtable[0])) / 1024);
+			(avail_pages * sizeof(pfdtable[0])) / 1024);
 
 	pfdrmap = (struct rmap *)pfdtable_end;
 	pfdrmap_top = pfdrmap;
@@ -467,29 +413,6 @@ void pagealloc_init(void)
 	kmem_end = round_up((uintptr_t)pfdrmap_end, PAGE_SIZE);
 	printk("Memory: Kernel memory area end = 0x%lx\n", kmem_end);
 
-	/*
-	 * Second Pass: actually fill the pfdtable entries
-	 *
-	 * Including add_range(), this loop is O(n), where
-	 * n = number of available memory pages in the system
-	 */
-
-	e820_for_each(range) {
-		if (range->type != E820_AVAIL)
-			continue;
-		if (e820_sanitize_range(range, kmem_end))
-			continue;
-
-		pfdtable_add_range(range);
-	}
-
-	/*
-	 * Statistics
-	 */
-
-	ascending_prio_for_each(zone) {
-		zone->boot_freepages = zone->freepages_count;
-	}
 }
 
 /*

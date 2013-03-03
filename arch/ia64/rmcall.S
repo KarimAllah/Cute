@@ -32,7 +32,7 @@
  * Luckily, 'rmcall.h' now includes macros for all of the above formulae.
  */
 
-#include <segment.h>
+#include "segment.h"
 #include "rmcall.h"
 #include "rmcommon.h"
 

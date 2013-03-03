@@ -10,24 +10,18 @@
  * The real deal is in the headers: this is only init & test-cases.
  */
 
-#include <kernel.h>
-#include <x86.h>
 #include <percpu.h>
 #include <sched.h>
 #include <tests.h>
+
+void arch_percpu_area_init(enum cpu_type t);
 
 /*
  * Initialize the calling CPU's per-CPU area.
  */
 void percpu_area_init(enum cpu_type t)
 {
-	if (t == BOOTSTRAP)
-		set_gs(BOOTSTRAP_PERCPU_AREA);
-
-	/* else, we're on a secondary core where %gs
-	 * is already set-up by the trampoline. */
-
-	percpu_set(self, get_gs());
+	arch_percpu_area_init(t);
 	sched_percpu_area_init();
 }
 

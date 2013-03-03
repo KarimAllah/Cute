@@ -207,7 +207,7 @@ void serial_init(void)
 	divisor = MAX_BAUD / DESIRED_BAUD;
 	assert(divisor <= UINT16_MAX);
 
-	port_base = *(uint16_t *)VIRTUAL(BDA_COM1_ENTRY);
+	port_base = *(uint16_t *)VIRT(BDA_COM1_ENTRY);
 	if (port_base == 0) {
 		printk("COM1: BIOS-reported I/O address = 0; "
 		       "no serial port attached\n");

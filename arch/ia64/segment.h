@@ -65,15 +65,15 @@ struct system_descriptor {
 
 #define set_tss_descriptor(_tss_ptr, _dpl, _base, _limit) { \
 	memset(_tss_ptr, 0x0, sizeof(*_tss_ptr)); \
-	_tss_ptr->type = 0x9; \
-	_tss_ptr->dpl = _dpl; \
-	_tss_ptr->p = 0x1; \
-	_tss_ptr->base_low = 0xFFFF & _base; \
-	_tss_ptr->base_mid0 = ((((uint64_t)0xFF) << 16) & _base) >> 16; \
-	_tss_ptr->base_mid1 = ((((uint64_t)0xFF) << 24) & _base) >> 24; \
-	_tss_ptr->base_high = ((((uint64_t)0xFFFFFFFF) << 32) & _base) >> 32; \
-	_tss_ptr->limit_low = 0xFFFF & _limit ; \
-	_tss_ptr->limit_high = ((0xFF << 16) & _limit) >> 16; \
+	(_tss_ptr)->type = 0x9; \
+	(_tss_ptr)->dpl = (_dpl); \
+	(_tss_ptr)->p = 0x1; \
+	(_tss_ptr)->base_low = 0xFFFF & (_base); \
+	(_tss_ptr)->base_mid0 = ((((uint64_t)0xFF) << 16) & (_base)) >> 16; \
+	(_tss_ptr)->base_mid1 = ((((uint64_t)0xFF) << 24) & (_base)) >> 24; \
+	(_tss_ptr)->base_high = ((((uint64_t)0xFFFFFFFF) << 32) & (_base)) >> 32; \
+	(_tss_ptr)->limit_low = 0xFFFF & (_limit); \
+	(_tss_ptr)->limit_high = ((0xFF << 16) & (_limit)) >> 16; \
 }
 
 /*
